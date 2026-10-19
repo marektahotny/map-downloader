@@ -37,21 +37,30 @@ jobs:
           Remove-Item devkit\devkit.zip
           Get-ChildItem devkit
 
-      - name: Ensure MSVC v141 toolset (Visual Studio 2017) is installed
+      - name: Ensure MSVC v141 toolset (Visual Studio 2017)
+        id: toolset
         shell: pwsh
         run: |
-          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
-          Write-Host "Visual Studio: $vs"
-          $v141 = Join-Path $vs "MSBuild\Microsoft\VC\v170\Platforms\x64\PlatformToolsets\v141"
-          if (Test-Path $v141) {
-            Write-Host "v141 toolset present"
-          } else {
-            Write-Host "Installing v141 toolset..."
+          $ErrorActionPreference = 'Continue'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -property installationPath
+          Write-Host "::notice::Visual Studio: $vs"
+          $has = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.v141.x86.x64 -property installationPath
+          if (-not $has) {
+            Write-Host "::notice::Installing MSVC v141 toolset"
             $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
-            $p = Start-Process -FilePath $installer -ArgumentList @('modify', '--installPath', "`"$vs`"", '--add', 'Microsoft.VisualStudio.Component.VC.v141.x86.x64', '--quiet', '--norestart', '--nocache') -Wait -PassThru
-            Write-Host "Installer exit code: $($p.ExitCode)"
-            if (-not (Test-Path $v141)) { throw "v141 toolset installation failed" }
+            & $installer modify --installPath "$vs" --add Microsoft.VisualStudio.Component.VC.v141.x86.x64 --quiet --norestart --nocache --wait | Out-Default
+            Write-Host "::notice::vs_installer exit code $LASTEXITCODE"
+            $has = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.v141.x86.x64 -property installationPath
           }
+          if ($has) {
+            Write-Host "::notice::Using toolset v141"
+            "toolset=v141" >> $env:GITHUB_OUTPUT
+          } else {
+            Write-Host "::warning::v141 not available, falling back to v143 (binary compatible, needs VC++ 2015-2022 redistributable)"
+            "toolset=v143" >> $env:GITHUB_OUTPUT
+          }
+          exit 0
 
       - name: Embed web UI
         run: python tools/embed_html.py
@@ -60,7 +69,7 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: Build
-        run: msbuild addon\PilonMapDownloader.vcxproj /m /p:Configuration=Release /p:Platform=x64 /v:minimal
+        run: msbuild addon\PilonMapDownloader.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=${{ steps.toolset.outputs.toolset }} /v:minimal
 
       - name: Collect output
         shell: pwsh
