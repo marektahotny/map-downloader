@@ -110,7 +110,20 @@ jobs:
           name: PilonMapDownloader-AC23-win64
           path: dist/
 
-      - name: Release (tags only)
+      - name: Publish build to Releases (main branch)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ac23-latest
+          name: "Pilon Map Downloader – Archicad 23 (posledné zostavenie)"
+          prerelease: true
+          make_latest: false
+          body: |
+            Automatické zostavenie z vetvy main (commit ${{ github.sha }}).
+            Inštalácia: skopírujte PilonMapDownloader.apx do priečinka Add-Ons v Archicade 23 alebo ho pridajte cez Možnosti › Správca doplnkov.
+          files: dist/PilonMapDownloader.apx
+
+      - name: Release (version tags)
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
