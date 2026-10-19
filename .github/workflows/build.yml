@@ -49,8 +49,9 @@ jobs:
           if (-not $has) {
             Write-Host "::notice::Installing MSVC v141 toolset"
             $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
-            & $installer modify --installPath "$vs" --add Microsoft.VisualStudio.Component.VC.v141.x86.x64 --quiet --norestart --nocache --wait | Out-Default
-            Write-Host "::notice::vs_installer exit code $LASTEXITCODE"
+            $args = "modify --installPath `"$vs`" --add Microsoft.VisualStudio.Component.VC.v141.x86.x64 --quiet --norestart --nocache"
+            $p = Start-Process -FilePath $installer -ArgumentList $args -Wait -PassThru
+            Write-Host "::notice::vs_installer exit code $($p.ExitCode)"
             $has = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.v141.x86.x64 -property installationPath
           }
           if ($has) {
@@ -69,7 +70,17 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: Build
-        run: msbuild addon\PilonMapDownloader.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=${{ steps.toolset.outputs.toolset }} /v:minimal
+        shell: pwsh
+        run: |
+          msbuild addon\PilonMapDownloader.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=${{ steps.toolset.outputs.toolset }} /v:minimal /nologo 2>&1 | Tee-Object -FilePath build.log
+          $code = $LASTEXITCODE
+          # re-emit compiler errors as annotations (readable through the GitHub API)
+          $n = 0
+          Get-Content build.log | Where-Object { $_ -match ' error | error[A-Z]*[0-9]+|: fatal error|MSB[0-9]+' } | Select-Object -Unique | ForEach-Object {
+            if ($n -lt 45) { $msg = $_ -replace '::', ':' ; Write-Host "::error::$($msg.Substring(0, [Math]::Min(600, $msg.Length)))" }
+            $n++
+          }
+          exit $code
 
       - name: Collect output
         shell: pwsh
