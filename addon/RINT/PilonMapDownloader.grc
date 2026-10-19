@@ -9,7 +9,8 @@
 
 'STR#' ID_MENU_STRINGS "Strings for the Menu" {
 /* [   ] */		"Pilon"
-/* [  1] */		"Map Downloader^ES^EE^EI^ED^EW^E3^EL"
+/* [   ] */		"Map Downloader"
+/* [  1] */			"Mapove podklady SR^ES^EE^EI^ED^EW^E3^EL"
 }
 
 'STR#' ID_MENU_PROMPT "Prompt strings for the Menu" {

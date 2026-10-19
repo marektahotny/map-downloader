@@ -40,6 +40,8 @@ namespace Geo {
 		std::vector<Ring>	rings;			// exterior + interior rings, closed (first == last)
 		bool				hasRefPoint = false;
 		PointEN				refPoint;
+		double				officialArea = 0.0;	// areaValue from the service (m2), 0 if not present
+		std::string			zoning;				// optional extra attribute (land use etc.)
 	};
 
 	// --- Geometry helpers ---
@@ -55,6 +57,10 @@ namespace Geo {
 	//  - positive JTSK (Y, X) values are negated
 	//  - swapped axis order is detected (|E| < |N| always holds in SK/CZ)
 	PointEN NormalizeJtsk (double a, double b);
+
+	// Outer boundary of a set of adjacent polygons (e.g. parcels forming a building plot):
+	// edges shared by two rings cancel out, remaining edges are chained into closed rings.
+	std::vector<Ring> OuterBoundary (const std::vector<Ring>& rings, double tolerance = 0.005);
 
 	// --- OGC request URLs ---
 	std::string AppendQuery (const std::string& baseUrl, const std::string& query);

@@ -131,6 +131,7 @@ input[type=range] { flex: 1; }
 	<div id="mapTools">
 		<button class="iconbtn" id="toolRect" title="Výber územia obdĺžnikom">▭ Obdĺžnik</button>
 		<button class="iconbtn" id="toolPoly" title="Výber územia polygónom">⬡ Polygón</button>
+		<button class="iconbtn" id="toolPlot" title="Výber stavebného pozemku – polygón okolo parciel">▣ Pozemok</button>
 		<button class="iconbtn" id="toolOrigin" title="Umiestniť bod lokálneho počiatku">✛ Počiatok</button>
 	</div>
 	<div id="coords"></div>
@@ -145,6 +146,17 @@ input[type=range] { flex: 1; }
 	</section>
 
 	<section>
+		<h2>Stavebný pozemok <span class="badge" id="plotBadge">nevybraný</span></h2>
+		<div class="small muted">▣ Nakreslite polygón okolo parciel, ktoré tvoria pozemok. Zahrnú sa všetky parcely C, ktoré ležia celé vnútri tvaru. Ďalší polygón parcely pridá, krížikom ich odoberiete.</div>
+		<div id="plotList" class="small" style="margin:4px 0"></div>
+		<div class="row">
+			<button class="btn" id="btnPlotPick">▣ Vybrať pozemok</button>
+			<button class="btn" id="btnPlotReport" title="TXT + XML: parcely, výmery, susedné parcely">Report o pozemku…</button>
+			<button class="link" id="btnPlotClear">zrušiť pozemok</button>
+		</div>
+	</section>
+
+	<section>
 		<h2>Podklady na stiahnutie</h2>
 
 		<div class="item">
@@ -154,6 +166,14 @@ input[type=range] { flex: 1; }
 		<div class="item">
 			<label><input type="checkbox" id="itCadE"> <b>Parcely registra E</b></label>
 			<div class="desc">Pôvodné vlastnícke parcely (UO) na samostatnej vrstve – nekopírujú stav v teréne.</div>
+		</div>
+		<div class="item">
+			<label><input type="checkbox" id="itPlot" checked> <b>Hranica pozemku</b></label>
+			<div class="desc">Vonkajšia hranica vybraného pozemku na vrstve KN_POZEMOK (vnútorné hranice medzi parcelami sa nekreslia).</div>
+		</div>
+		<div class="item">
+			<label><input type="checkbox" id="itBuildings"> <b>Budovy ZBGIS</b></label>
+			<div class="desc">Obrysy budov zo ZBGIS (INSPIRE) na samostatnej vrstve.</div>
 		</div>
 		<div class="item">
 			<label><input type="checkbox" id="itOrtho" checked> <b>Ortofoto</b></label>
@@ -295,7 +315,8 @@ input[type=range] { flex: 1; }
 	// =========================================================================
 	var pending = {};
 	var nextId = 1;
-	var hasBridge = typeof window.ACAPI !== 'undefined' && window.ACAPI && typeof window.ACAPI.Request === 'function';
+	function bridgeReady() { return typeof window.ACAPI !== 'undefined' && window.ACAPI && typeof window.ACAPI.Request === 'function'; }
+	var hasBridge = bridgeReady();
 
 	window.PMD = {
 		onResponse: function (resp) {
@@ -315,18 +336,24 @@ input[type=range] { flex: 1; }
 			var msg = payload ? JSON.parse(JSON.stringify(payload)) : {};
 			msg.cmd = cmd;
 			msg.id = id;
-			if (!hasBridge) {
-				resolve({ ok: false, error: 'Mimo Archicadu – príkaz „' + cmd + '“ nie je dostupný.' });
-				return;
-			}
-			pending[id] = resolve;
-			setBusy(true);
-			try {
-				window.ACAPI.Request(JSON.stringify(msg));
-			} catch (e) {
-				delete pending[id];
-				resolve({ ok: false, error: String(e) });
-			}
+			var tries = 0;
+			(function send() {
+				if (!bridgeReady()) {
+					// the Archicad object may be injected a moment after the page loads
+					if (tries++ < 30) { setTimeout(send, 100); return; }
+					resolve({ ok: false, error: 'Mimo Archicadu – príkaz „' + cmd + '“ nie je dostupný.' });
+					return;
+				}
+				hasBridge = true;
+				pending[id] = resolve;
+				setBusy(true);
+				try {
+					window.ACAPI.Request(JSON.stringify(msg));
+				} catch (e) {
+					delete pending[id];
+					resolve({ ok: false, error: String(e) });
+				}
+			})();
 		});
 	}
 
@@ -365,6 +392,8 @@ input[type=range] { flex: 1; }
 			cadastreCText: { layer: 'KN_cisla_C', pen: 1 },
 			cadastreE: { layer: 'KN_parcely_E', pen: 3, lineType: '' },
 			cadastreEText: { layer: 'KN_cisla_E', pen: 3 },
+			plot: { layer: 'KN_POZEMOK', pen: 20, lineType: '' },
+			buildings: { layer: 'ZBGIS_budovy', pen: 2, lineType: '' },
 			ortho: { layer: 'ORTOFOTO' },
 			terrain: { layer: 'TEREN_DMR5' },
 			origin: { layer: 'POCIATOK' }
@@ -380,6 +409,8 @@ input[type=range] { flex: 1; }
 		cadastreCText: 'Kataster C – čísla',
 		cadastreE: 'Kataster E – hranice',
 		cadastreEText: 'Kataster E – čísla',
+		plot: 'Hranica pozemku',
+		buildings: 'Budovy ZBGIS',
 		ortho: 'Ortofoto',
 		terrain: 'Terén (mesh)',
 		origin: 'Počiatok'
@@ -421,11 +452,12 @@ input[type=range] { flex: 1; }
 		drawPts = [];
 		rectStart = null;
 		drawLayer.clearLayers();
-		['toolRect', 'toolPoly', 'toolOrigin'].forEach(function (id) { $(id).classList.remove('active'); });
+		['toolRect', 'toolPoly', 'toolPlot', 'toolOrigin'].forEach(function (id) { $(id).classList.remove('active'); });
 		var hint = $('mapHint');
 		if (t === 'rect') { $('toolRect').classList.add('active'); hint.textContent = 'Kliknite na prvý a potom na protiľahlý roh obdĺžnika'; }
 		if (t === 'poly') { $('toolPoly').classList.add('active'); hint.textContent = 'Klikajte body polygónu, ukončite dvojklikom alebo na prvom bode'; }
 		if (t === 'origin') { $('toolOrigin').classList.add('active'); hint.textContent = 'Kliknite na bod lokálneho počiatku'; }
+		if (t === 'plot') { $('toolPlot').classList.add('active'); hint.textContent = 'Polygón okolo parciel pozemku – ukončite dvojklikom'; }
 		hint.style.display = t ? 'block' : 'none';
 		map.getContainer().style.cursor = t ? 'crosshair' : '';
 		if (t)
@@ -433,6 +465,7 @@ input[type=range] { flex: 1; }
 	}
 
 	function finishArea(latlngs) {
+		if (tool === 'plot') { finishPlot(latlngs); return; }
 		var ring = latlngs.map(toJtsk);
 		if (ring.length < 3)
 			return;
@@ -464,7 +497,7 @@ input[type=range] { flex: 1; }
 			finishArea([toLatLng({ e: minE, n: minN }), toLatLng({ e: maxE, n: minN }), toLatLng({ e: maxE, n: maxN }), toLatLng({ e: minE, n: maxN })]);
 			return;
 		}
-		if (tool === 'poly') {
+		if (tool === 'poly' || tool === 'plot') {
 			if (drawPts.length >= 3) {
 				var first = map.latLngToContainerPoint(drawPts[0]);
 				var here = map.latLngToContainerPoint(e.latlng);
@@ -479,7 +512,7 @@ input[type=range] { flex: 1; }
 	});
 
 	map.on('dblclick', function (e) {
-		if (tool === 'poly' && drawPts.length >= 3)
+		if ((tool === 'poly' || tool === 'plot') && drawPts.length >= 3)
 			finishArea(drawPts.slice());
 	});
 
@@ -491,7 +524,7 @@ input[type=range] { flex: 1; }
 			L.polygon([toLatLng({ e: minE, n: minN }), toLatLng({ e: maxE, n: minN }), toLatLng({ e: maxE, n: maxN }), toLatLng({ e: minE, n: maxN })],
 				{ color: '#e0522d', weight: 2, dashArray: '5,4', fillOpacity: .08, interactive: false }).addTo(drawLayer);
 		}
-		if (tool === 'poly' && drawPts.length)
+		if ((tool === 'poly' || tool === 'plot') && drawPts.length)
 			redrawTemp(e.latlng);
 	});
 
@@ -563,6 +596,62 @@ input[type=range] { flex: 1; }
 	$('toolRect').onclick = function () { setTool(tool === 'rect' ? null : 'rect'); };
 	$('toolPoly').onclick = function () { setTool(tool === 'poly' ? null : 'poly'); };
 	$('toolOrigin').onclick = function () { setTool(tool === 'origin' ? null : 'origin'); };
+	$('toolPlot').onclick = function () { setTool(tool === 'plot' ? null : 'plot'); };
+
+	// =========================================================================
+	// Building plot (parcels)
+	// =========================================================================
+	var plot = [];		// [{id,label,area,official,rings}]
+	var plotLayer = L.layerGroup().addTo(map);
+
+	function finishPlot(latlngs) {
+		var ring = latlngs.map(toJtsk);
+		ring.push({ e: ring[0].e, n: ring[0].n });
+		setTool(null);
+		setStatus('Hľadám parcely pozemku…');
+		request('plotParcels', { polygon: ring }).then(function (r) {
+			if (!r.ok) { setStatus(r.error, 'err'); return; }
+			var added = 0;
+			r.parcels.forEach(function (p) {
+				if (!plot.some(function (q) { return q.id === p.id; })) { plot.push(p); added++; }
+			});
+			drawPlot();
+			saveUiState();
+			setStatus(added ? ('Pridané parcely: ' + added) : 'V tvare neleží celá žiadna nová parcela.', added ? 'ok' : 'err');
+		});
+	}
+
+	function drawPlot() {
+		plotLayer.clearLayers();
+		var list = $('plotList');
+		list.innerHTML = '';
+		var total = 0;
+		plot.forEach(function (p, idx) {
+			total += p.area;
+			p.rings.forEach(function (r, i) {
+				L.polygon(r.map(function (c) { return toLatLng({ e: c[0], n: c[1] }); }), { color: '#1f5fbf', weight: 2, fillOpacity: i ? 0 : .15, interactive: false }).addTo(plotLayer);
+			});
+			var d = document.createElement('div');
+			d.className = 'row';
+			d.style.margin = '1px 0';
+			d.innerHTML = '<button class="link" title="Odobrať parcelu" data-i="' + idx + '">✕</button> <b>' + escapeHtml(p.label || p.id) + '</b> <span class="muted num">' + fmt(p.area, 0) + ' m²' + (p.official ? ' (úradná ' + fmt(p.official, 0) + ' m²)' : '') + '</span>';
+			list.appendChild(d);
+		});
+		[].forEach.call(list.querySelectorAll('button[data-i]'), function (b) {
+			b.onclick = function () { plot.splice(Number(b.getAttribute('data-i')), 1); drawPlot(); saveUiState(); };
+		});
+		$('plotBadge').textContent = plot.length ? (plot.length + ' parc. · ' + fmt(total, 0) + ' m²') : 'nevybraný';
+	}
+
+	$('btnPlotPick').onclick = function () { setTool('plot'); };
+	$('btnPlotClear').onclick = function () { plot = []; drawPlot(); saveUiState(); };
+	$('btnPlotReport').onclick = function () {
+		if (!plot.length) { setStatus('Najprv vyberte pozemok.', 'err'); return; }
+		request('plotReport', { parcels: plot }).then(function (r) {
+			if (r.ok) setStatus('Report uložený (' + r.neighbours + ' susedných parciel): ' + r.path, 'ok');
+			else setStatus(r.error, 'err');
+		});
+	};
 	$('btnOriginPick').onclick = function () { setTool('origin'); };
 	$('btnOriginClear').onclick = function () { setOrigin(null); };
 	$('btnClearArea').onclick = function () { area = null; terrain = null; updateTerrainBox(); drawArea(); saveUiState(); };
@@ -778,8 +867,9 @@ input[type=range] { flex: 1; }
 
 	$('btnPlace').onclick = function () {
 		if (!area) { setStatus('Najprv vyberte územie v mape.', 'err'); return; }
-		var items = { cadastreC: $('itCadC').checked, cadastreE: $('itCadE').checked, ortho: $('itOrtho').checked, terrain: $('itTerrain').checked, originMarker: $('itOrigin').checked };
-		if (!items.cadastreC && !items.cadastreE && !items.ortho && !items.terrain) { setStatus('Zaškrtnite aspoň jeden podklad.', 'err'); return; }
+		var items = { cadastreC: $('itCadC').checked, cadastreE: $('itCadE').checked, ortho: $('itOrtho').checked, terrain: $('itTerrain').checked,
+			originMarker: $('itOrigin').checked, buildings: $('itBuildings').checked, plot: $('itPlot').checked && plot.length > 0 };
+		if (!items.cadastreC && !items.cadastreE && !items.ortho && !items.terrain && !items.buildings && !items.plot) { setStatus('Zaškrtnite aspoň jeden podklad.', 'err'); return; }
 		var b = bounds(area);
 		if ((b.maxE - b.minE) * (b.maxN - b.minN) > 25e6) {
 			setStatus('Územie je väčšie ako 25 km² – zmenšite výber.', 'err');
@@ -797,6 +887,7 @@ input[type=range] { flex: 1; }
 			items: items,
 			orthoHQ: $('orthoHQ').checked,
 			reduction: reductionParams(),
+			plot: plot.map(function (p) { return p.rings[0]; }),
 			settings: settings
 		}).then(function (r) {
 			$('btnPlace').disabled = false;
@@ -932,7 +1023,8 @@ input[type=range] { flex: 1; }
 	function collectUi() {
 		return {
 			itCadC: $('itCadC').checked, itCadE: $('itCadE').checked, itOrtho: $('itOrtho').checked, orthoHQ: $('orthoHQ').checked,
-			itTerrain: $('itTerrain').checked, itOrigin: $('itOrigin').checked,
+			itTerrain: $('itTerrain').checked, itOrigin: $('itOrigin').checked, itBuildings: $('itBuildings').checked, itPlot: $('itPlot').checked,
+			plot: plot,
 			insJtsk: $('insJtsk').checked, insLocal: $('insLocal').checked,
 			target: document.querySelector('input[name=target]:checked').value,
 			red: reductionParams(), h0: $('h0').value,
@@ -942,7 +1034,7 @@ input[type=range] { flex: 1; }
 	}
 	function applyUi(u) {
 		if (!u) return;
-		['itCadC', 'itCadE', 'itOrtho', 'orthoHQ', 'itTerrain', 'itOrigin', 'insJtsk', 'insLocal'].forEach(function (k) { if (k in u) $(k).checked = !!u[k]; });
+		['itCadC', 'itCadE', 'itOrtho', 'orthoHQ', 'itTerrain', 'itOrigin', 'itBuildings', 'itPlot', 'insJtsk', 'insLocal'].forEach(function (k) { if (k in u) $(k).checked = !!u[k]; });
 		if (u.target) { var t = document.querySelector('input[name=target][value=' + u.target + ']'); if (t) t.checked = true; }
 		if (u.red) {
 			$('redOn').checked = u.red.enabled !== false;
@@ -955,6 +1047,7 @@ input[type=range] { flex: 1; }
 		if (u.view && u.view.c) map.setView([u.view.c.lat, u.view.c.lng], u.view.z || 15);
 		if (u.area && u.area.length > 3) { area = u.area; drawArea(); }
 		if (u.origin) setOrigin(u.origin);
+		if (u.plot && u.plot.length) { plot = u.plot; drawPlot(); }
 		updateRedUi();
 	}
 	function persistSettings() {
@@ -970,11 +1063,8 @@ input[type=range] { flex: 1; }
 	// =========================================================================
 	updateRedUi();
 	drawArea();
-	if (!hasBridge) {
-		setStatus('Náhľad mimo Archicadu – vkladanie nie je dostupné.', 'err');
-	}
 	request('init', {}).then(function (r) {
-		if (!r.ok) return;
+		if (!r.ok) { setStatus(r.error || 'Spojenie s Archicadom zlyhalo.', 'err'); return; }
 		$('ver').textContent = 'v' + r.version + ' · AC23';
 		services = r.services;
 		if (r.settings) {

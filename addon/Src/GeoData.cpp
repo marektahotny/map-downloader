@@ -161,6 +161,83 @@ PointEN NormalizeJtsk (double a, double b)
 }
 
 
+std::vector<Ring> OuterBoundary (const std::vector<Ring>& rings, double tolerance)
+{
+	// vertex snapping by grid key
+	struct Key { long long x, y; bool operator== (const Key& o) const { return x == o.x && y == o.y; } };
+	struct KeyHash { size_t operator() (const Key& k) const { return std::hash<long long> () (k.x * 1000003LL ^ k.y); } };
+	auto keyOf = [&] (const PointEN& p) { return Key { (long long) std::floor (p.e / tolerance + 0.5), (long long) std::floor (p.n / tolerance + 0.5) }; };
+
+	std::unordered_map<Key, PointEN, KeyHash> coords;
+	// undirected edge counts
+	struct EdgeKey { Key a, b; bool operator== (const EdgeKey& o) const { return a == o.a && b == o.b; } };
+	struct EdgeHash { size_t operator() (const EdgeKey& k) const { KeyHash h; return h (k.a) * 31 + h (k.b); } };
+	std::unordered_map<EdgeKey, int, EdgeHash> count;
+	std::vector<std::pair<Key, Key>> directed;
+
+	for (const Ring& r : rings) {
+		for (size_t i = 0; i + 1 < r.size (); i++) {
+			Key a = keyOf (r[i]), b = keyOf (r[i + 1]);
+			if (a == b)
+				continue;
+			coords[a] = r[i];
+			coords[b] = r[i + 1];
+			EdgeKey ek = (a.x < b.x || (a.x == b.x && a.y < b.y)) ? EdgeKey { a, b } : EdgeKey { b, a };
+			count[ek]++;
+			directed.push_back (std::make_pair (a, b));
+		}
+	}
+
+	// keep boundary edges (count == 1), adjacency from start vertex
+	std::unordered_map<Key, std::vector<Key>, KeyHash> next;
+	size_t remaining = 0;
+	for (const auto& d : directed) {
+		EdgeKey ek = (d.first.x < d.second.x || (d.first.x == d.second.x && d.first.y < d.second.y)) ? EdgeKey { d.first, d.second } : EdgeKey { d.second, d.first };
+		if (count[ek] == 1) {
+			next[d.first].push_back (d.second);
+			remaining++;
+		}
+	}
+
+	std::vector<Ring> out;
+	while (remaining > 0) {
+		// find a start
+		Key start {};
+		bool found = false;
+		for (auto& kv : next) {
+			if (!kv.second.empty ()) {
+				start = kv.first;
+				found = true;
+				break;
+			}
+		}
+		if (!found)
+			break;
+		Ring ring;
+		Key cur = start;
+		ring.push_back (coords[cur]);
+		size_t guard = 0;
+		while (guard++ < 1000000) {
+			auto it = next.find (cur);
+			if (it == next.end () || it->second.empty ())
+				break;
+			Key nx = it->second.back ();
+			it->second.pop_back ();
+			remaining--;
+			ring.push_back (coords[nx]);
+			cur = nx;
+			if (cur == start)
+				break;
+		}
+		if (ring.size () >= 4)
+			out.push_back (ring);
+	}
+	// largest ring first
+	std::sort (out.begin (), out.end (), [] (const Ring& a, const Ring& b) { return std::fabs (SignedArea (a)) > std::fabs (SignedArea (b)); });
+	return out;
+}
+
+
 // =============================================================================
 // URLs
 // =============================================================================
@@ -486,6 +563,18 @@ bool ParseGmlFeatures (const std::string& gml, const std::string& labelTags, std
 							break;
 						}
 					}
+				}
+			}
+
+			// official area (INSPIRE CP areaValue)
+			{
+				size_t ae = 0;
+				bool sc = false;
+				size_t as = FindStartTag (body, "areaValue", 0, body.size (), &ae, &sc);
+				if (as != std::string::npos && !sc) {
+					size_t aend = FindEndTag (body, "areaValue", ae);
+					if (aend != std::string::npos)
+						f.officialArea = atof (Trimmed (body.substr (ae, aend - ae)).c_str ());
 				}
 			}
 

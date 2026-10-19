@@ -371,6 +371,7 @@ static JsonValue CmdTestServices (const ProgressFn& progress)
 		{ "ortho",		"SERVICE=WMS&REQUEST=GetCapabilities" },
 		{ "cadastreC",	"SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities" },
 		{ "cadastreE",	"SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities" },
+		{ "buildings",	"SERVICE=WFS&VERSION=2.0.0&REQUEST=GetCapabilities" },
 		{ "terrain",	nullptr },
 	};
 	for (const Probe& p : probes) {
@@ -581,6 +582,30 @@ static JsonValue CmdPlace (const JsonValue& req, const ProgressFn& progress)
 		if (!haveE)
 			AddResult (results, "Kataster E", false, error);
 	}
+	std::vector<Geo::Feature> buildings;
+	bool haveBuildings = false;
+	if (items["buildings"].AsBool ()) {
+		if (progress)
+			progress (u8"Sťahujem budovy ZBGIS…");
+		error.clear ();
+		haveBuildings = DownloadFeatures (services["buildings"], box, buildings, error);
+		if (!haveBuildings)
+			AddResult (results, "Budovy ZBGIS", false, error);
+	}
+
+	std::vector<Geo::Ring> plotOutline;
+	if (items["plot"].AsBool () && req["plot"].Size () > 0) {
+		std::vector<Geo::Ring> rings;
+		for (size_t i = 0; i < req["plot"].Size (); i++) {
+			Geo::Ring r = ReadRing (req["plot"].At (i));
+			if (r.size () >= 4)
+				rings.push_back (r);
+		}
+		plotOutline = Geo::OuterBoundary (rings);
+		if (plotOutline.empty ())
+			AddResult (results, "Pozemok", false, u8"Hranicu pozemku sa nepodarilo vytvoriť");
+	}
+
 	if (items["ortho"].AsBool ()) {
 		if (progress)
 			progress (u8"Sťahujem ortofoto…");
@@ -669,6 +694,22 @@ static JsonValue CmdPlace (const JsonValue& req, const ProgressFn& progress)
 			placeParcels (parcelsE, "cadastreE", "cadastreEText", "KN_parcely_E", "KN_cisla_E", 3);
 			AddResult (results, "Kataster E", true, std::to_string (parcelsE.size ()) + " parciel, " + std::to_string (stats.lines - l0) + u8" čiar");
 		}
+		if (haveBuildings) {
+			Placer::LineStyle bs = ReadStyle (layers["buildings"], "ZBGIS_budovy", 2);
+			int l0 = stats.lines;
+			for (const Placer::Offset& off : offsets)
+				for (const Geo::Feature& f : buildings)
+					Placer::PlaceRings (f.rings, bs, off, stats);
+			AddResult (results, "Budovy ZBGIS", true, std::to_string (buildings.size ()) + u8" budov, " + std::to_string (stats.lines - l0) + u8" čiar");
+		}
+		if (!plotOutline.empty ()) {
+			Placer::LineStyle ps = ReadStyle (layers["plot"], "KN_POZEMOK", 20);
+			for (const Placer::Offset& off : offsets)
+				Placer::PlaceRings (plotOutline, ps, off, stats);
+			char buf[120];
+			snprintf (buf, sizeof (buf), u8"%u obrys(y), výmera %.0f m²", (unsigned) plotOutline.size (), std::fabs (Geo::SignedArea (plotOutline[0])));
+			AddResult (results, "Pozemok", true, buf);
+		}
 		if (haveOrtho) {
 			std::string layer = layers["ortho"]["layer"].AsString ("ORTOFOTO");
 			int ok = 0;
@@ -704,6 +745,186 @@ static JsonValue CmdPlace (const JsonValue& req, const ProgressFn& progress)
 	r.Set ("failed", stats.failed);
 	if (!stats.lastError.empty ())
 		r.Set ("lastError", stats.lastError);
+	return r;
+}
+
+
+static JsonValue FeatureToJson (const Geo::Feature& f)
+{
+	JsonValue o = JsonValue::MakeObject ();
+	o.Set ("id", f.id.empty () ? f.label : f.id);
+	o.Set ("label", f.label);
+	double area = 0.0;
+	JsonValue rings = JsonValue::MakeArray ();
+	for (size_t ri = 0; ri < f.rings.size (); ri++) {
+		const Geo::Ring& r = f.rings[ri];
+		area += (ri == 0 ? 1.0 : -1.0) * std::fabs (Geo::SignedArea (r));
+		JsonValue ra = JsonValue::MakeArray ();
+		for (const auto& p : r) {
+			JsonValue pt = JsonValue::MakeArray ();
+			pt.Push (JsonValue::MakeNumber (std::round (p.e * 1000.0) / 1000.0));
+			pt.Push (JsonValue::MakeNumber (std::round (p.n * 1000.0) / 1000.0));
+			ra.Push (pt);
+		}
+		rings.Push (ra);
+	}
+	o.Set ("rings", rings);
+	o.Set ("area", std::round (area * 100.0) / 100.0);
+	o.Set ("official", f.officialArea);
+	return o;
+}
+
+
+static JsonValue CmdPlotParcels (const JsonValue& req, const ProgressFn& progress)
+{
+	Geo::Ring poly = ReadRing (req["polygon"]);
+	if (poly.size () < 4)
+		return Error (u8"Nakreslite polygón okolo parciel pozemku");
+	if (progress)
+		progress (u8"Hľadám parcely vo vybranom tvare…");
+	std::vector<Geo::Feature> features;
+	std::string error;
+	if (!DownloadFeatures (LoadServices ()["cadastreC"], Geo::BoundsOf (poly), features, error))
+		return Error (error);
+	JsonValue list = JsonValue::MakeArray ();
+	for (const Geo::Feature& f : features) {
+		if (f.rings.empty ())
+			continue;
+		if (Geo::RingFullyInside (f.rings[0], poly))
+			list.Push (FeatureToJson (f));
+	}
+	JsonValue r = JsonValue::MakeObject ();
+	r.Set ("ok", true);
+	r.Set ("parcels", list);
+	return r;
+}
+
+
+static bool RingsTouch (const Geo::Ring& a, const Geo::Ring& b, double tol)
+{
+	Geo::BBox ba = Geo::BoundsOf (a), bb = Geo::BoundsOf (b);
+	if (ba.maxE + tol < bb.minE || bb.maxE + tol < ba.minE || ba.maxN + tol < bb.minN || bb.maxN + tol < ba.minN)
+		return false;
+	for (const auto& p : a)
+		if (Geo::DistanceToPolygonEdges (b, p.e, p.n) <= tol)
+			return true;
+	for (const auto& p : b)
+		if (Geo::DistanceToPolygonEdges (a, p.e, p.n) <= tol)
+			return true;
+	return false;
+}
+
+
+static std::string XmlEsc (const std::string& s)
+{
+	std::string o;
+	for (char c : s) {
+		if (c == '&') o += "&amp;";
+		else if (c == '<') o += "&lt;";
+		else if (c == '>') o += "&gt;";
+		else if (c == '"') o += "&quot;";
+		else o += c;
+	}
+	return o;
+}
+
+
+static JsonValue CmdPlotReport (const JsonValue& req, const ProgressFn& progress)
+{
+	const JsonValue& parcels = req["parcels"];
+	if (parcels.Size () == 0)
+		return Error (u8"Najprv vyberte pozemok (▣ Vybrať pozemok)");
+
+	std::vector<Geo::Ring> selRings;
+	std::vector<std::string> selIds;
+	Geo::BBox box;
+	bool first = true;
+	for (size_t i = 0; i < parcels.Size (); i++) {
+		const JsonValue& p = parcels.At (i);
+		Geo::Ring r = ReadRing (p["rings"].At (0));
+		if (r.size () < 4)
+			continue;
+		selRings.push_back (r);
+		selIds.push_back (p["id"].AsString ());
+		Geo::BBox b = Geo::BoundsOf (r);
+		if (first) { box = b; first = false; }
+		else { box.minE = std::min (box.minE, b.minE); box.minN = std::min (box.minN, b.minN); box.maxE = std::max (box.maxE, b.maxE); box.maxN = std::max (box.maxN, b.maxN); }
+	}
+
+	std::wstring path = Util::SaveFileDialog (std::wstring ((const wchar_t*) L"Uložiť report o pozemku"), std::wstring ((const wchar_t*) L"report_pozemok.txt"),
+											  std::wstring ((const wchar_t*) L"Text (*.txt)|*.txt"), std::wstring ((const wchar_t*) L"txt"));
+	if (path.empty ())
+		return Error (u8"Zrušené");
+
+	if (progress)
+		progress (u8"Hľadám susedné parcely…");
+	std::vector<Geo::Feature> around;
+	std::string error;
+	DownloadFeatures (LoadServices ()["cadastreC"], Expand (box, 25.0), around, error);
+
+	std::vector<const Geo::Feature*> neighbours;
+	for (const Geo::Feature& f : around) {
+		std::string id = f.id.empty () ? f.label : f.id;
+		if (std::find (selIds.begin (), selIds.end (), id) != selIds.end () || f.rings.empty ())
+			continue;
+		for (const Geo::Ring& r : selRings) {
+			if (RingsTouch (f.rings[0], r, 0.05)) {
+				neighbours.push_back (&f);
+				break;
+			}
+		}
+	}
+
+	std::vector<Geo::Ring> outline = Geo::OuterBoundary (selRings);
+	double total = 0.0, totalOfficial = 0.0;
+
+	std::string txt = u8"REPORT O POZEMKU (informatívny)\r\n";
+	txt += u8"Zdroj: ÚGKK SR – kataster nehnuteľností (INSPIRE), Pilon Map Downloader\r\n\r\n";
+	txt += u8"Parcely pozemku (register C):\r\n";
+	std::string xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\r\n<pozemok>\r\n  <parcely>\r\n";
+	for (size_t i = 0; i < parcels.Size (); i++) {
+		const JsonValue& p = parcels.At (i);
+		double a = p["area"].AsNumber (), off = p["official"].AsNumber ();
+		total += a;
+		totalOfficial += off;
+		char buf[300];
+		snprintf (buf, sizeof (buf), u8"  %-14s  výmera z geometrie %10.1f m²%s\r\n", p["label"].AsString ().c_str (), a,
+				  off > 0 ? (std::string (u8"   úradná ") + Util::FormatDouble (off, 0) + u8" m²").c_str () : "");
+		txt += buf;
+		xml += "    <parcela id=\"" + XmlEsc (p["id"].AsString ()) + "\" cislo=\"" + XmlEsc (p["label"].AsString ()) + "\" vymeraGeometria=\"" +
+			   Util::FormatDouble (a, 2) + "\" vymeraUradna=\"" + Util::FormatDouble (off, 0) + "\"/>\r\n";
+	}
+	char buf[300];
+	snprintf (buf, sizeof (buf), u8"\r\nSpolu: %u parciel, výmera z geometrie %.1f m²%s\r\n", (unsigned) parcels.Size (), total,
+			  totalOfficial > 0 ? (std::string (u8", úradná ") + Util::FormatDouble (totalOfficial, 0) + u8" m²").c_str () : "");
+	txt += buf;
+	if (!outline.empty ()) {
+		snprintf (buf, sizeof (buf), u8"Obrys pozemku: %u vrcholov, obvod %.2f m\r\n", (unsigned) outline[0].size (), [&] () {
+			double l = 0; for (size_t i = 0; i + 1 < outline[0].size (); i++) l += std::hypot (outline[0][i + 1].e - outline[0][i].e, outline[0][i + 1].n - outline[0][i].n); return l; } ());
+		txt += buf;
+	}
+	xml += "  </parcely>\r\n  <susedneParcely>\r\n";
+	txt += u8"\r\nSusedné parcely (dotýkajúce sa pozemku aspoň bodom):\r\n";
+	if (!error.empty ())
+		txt += u8"  (susedné parcely sa nepodarilo načítať: " + error + ")\r\n";
+	for (const Geo::Feature* f : neighbours) {
+		double a = f->rings.empty () ? 0.0 : std::fabs (Geo::SignedArea (f->rings[0]));
+		snprintf (buf, sizeof (buf), u8"  %-14s  výmera z geometrie %10.1f m²\r\n", f->label.c_str (), a);
+		txt += buf;
+		xml += "    <parcela id=\"" + XmlEsc (f->id) + "\" cislo=\"" + XmlEsc (f->label) + "\" vymeraGeometria=\"" + Util::FormatDouble (a, 2) + "\"/>\r\n";
+	}
+	xml += "  </susedneParcely>\r\n</pozemok>\r\n";
+	txt += u8"\r\nVlastníkov služba neposkytuje – overte na kataster.skgeodesy.sk alebo v aplikácii MAPKA.\r\n";
+
+	// UTF-8 BOM for Notepad
+	if (!Util::WriteFile (path, std::string ("\xEF\xBB\xBF") + txt))
+		return Error (u8"Súbor sa nepodarilo zapísať");
+	Util::WriteFile (Util::StripExtension (path) + std::wstring ((const wchar_t*) L".xml"), xml);
+
+	JsonValue r = JsonValue::MakeObject ();
+	r.Set ("ok", true);
+	r.Set ("path", Util::WideToUtf8 (path));
+	r.Set ("neighbours", (double) neighbours.size ());
 	return r;
 }
 
@@ -842,6 +1063,8 @@ JsonValue Execute (const JsonValue& request, const ProgressFn& progress)
 		if (cmd == "exportXyz")			return CmdExportXyz (request, progress);
 		if (cmd == "exportOrtho")		return CmdExportOrtho (request, progress);
 		if (cmd == "setPlace")			return CmdSetPlace (request);
+		if (cmd == "plotParcels")		return CmdPlotParcels (request, progress);
+		if (cmd == "plotReport")		return CmdPlotReport (request, progress);
 		if (cmd == "getPlace")			return CmdGetPlace ();
 	} catch (const std::exception& e) {
 		Util::Log (std::string ("exception: ") + e.what ());

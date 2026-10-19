@@ -55,5 +55,11 @@ int main(){
     printf("mesh boundary=%zu interior=%zu\n", o.boundary.size(), o.interior.size());
     assert(o.boundary.size()>4 && o.interior.size()>500 && o.boundary.front().e==o.boundary.back().e);
   }
+  { // outer boundary of two adjacent squares
+    std::vector<Ring> rs = { {{0,0},{10,0},{10,10},{0,10},{0,0}}, {{10,0},{20,0},{20,10},{10,10},{10,0}} };
+    auto ob = OuterBoundary(rs);
+    printf("outer rings=%zu verts=%zu area=%.1f\n", ob.size(), ob[0].size(), fabs(SignedArea(ob[0])));
+    assert(ob.size()==1 && fabs(fabs(SignedArea(ob[0]))-200)<1e-6);
+  }
   printf("ALL OK\n");
 }
