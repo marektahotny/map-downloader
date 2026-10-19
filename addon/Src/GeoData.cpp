@@ -822,6 +822,300 @@ static std::vector<double> TagValues (const TiffReader& r, const TiffTag& t)
 }	// namespace
 
 
+
+// =============================================================================
+// TIFF decompression (LZW, Deflate) - self-contained, no zlib dependency
+// =============================================================================
+
+namespace {
+
+typedef unsigned char Byte;
+
+// --- Inflate (RFC 1951), canonical Huffman decoding in the style of zlib's "puff" ---
+struct Inflater {
+	const Byte* in;
+	size_t inLen;
+	size_t inPos = 0;
+	unsigned bitBuf = 0;
+	int bitCnt = 0;
+	std::vector<Byte>* out;
+	bool err = false;
+
+	int Bits (int need)
+	{
+		long val = bitBuf;
+		while (bitCnt < need) {
+			if (inPos >= inLen) {
+				err = true;
+				return 0;
+			}
+			val |= (long) in[inPos++] << bitCnt;
+			bitCnt += 8;
+		}
+		bitBuf = (unsigned) (val >> need);
+		bitCnt -= need;
+		return (int) (val & ((1L << need) - 1));
+	}
+
+	struct Huffman {
+		short count[16];
+		short symbol[320];
+	};
+
+	int Decode (const Huffman& h)
+	{
+		int code = 0, first = 0, index = 0;
+		for (int len = 1; len < 16; len++) {
+			code |= Bits (1);
+			if (err)
+				return -1;
+			int count = h.count[len];
+			if (code - count < first)
+				return h.symbol[index + (code - first)];
+			index += count;
+			first += count;
+			first <<= 1;
+			code <<= 1;
+		}
+		err = true;
+		return -1;
+	}
+
+	static int Construct (Huffman& h, const short* length, int n)
+	{
+		for (int len = 0; len < 16; len++)
+			h.count[len] = 0;
+		for (int sym = 0; sym < n; sym++)
+			h.count[length[sym]]++;
+		if (h.count[0] == n)
+			return 0;
+		int left = 1;
+		for (int len = 1; len < 16; len++) {
+			left <<= 1;
+			left -= h.count[len];
+			if (left < 0)
+				return left;
+		}
+		short offs[16];
+		offs[1] = 0;
+		for (int len = 1; len < 15; len++)
+			offs[len + 1] = (short) (offs[len] + h.count[len]);
+		for (int sym = 0; sym < n; sym++)
+			if (length[sym] != 0)
+				h.symbol[offs[length[sym]]++] = (short) sym;
+		return left;
+	}
+
+	bool Codes (const Huffman& lencode, const Huffman& distcode)
+	{
+		static const short lbase[29] = { 3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27, 31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258 };
+		static const short lext[29] = { 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0 };
+		static const short dbase[30] = { 1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129, 193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097, 6145, 8193, 12289, 16385, 24577 };
+		static const short dext[30] = { 0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13 };
+		while (true) {
+			int symbol = Decode (lencode);
+			if (symbol < 0 || err)
+				return false;
+			if (symbol < 256) {
+				out->push_back ((Byte) symbol);
+			} else if (symbol == 256) {
+				return true;
+			} else {
+				symbol -= 257;
+				if (symbol >= 29)
+					return false;
+				int len = lbase[symbol] + Bits (lext[symbol]);
+				int ds = Decode (distcode);
+				if (ds < 0 || ds >= 30)
+					return false;
+				size_t dist = (size_t) (dbase[ds] + Bits (dext[ds]));
+				if (err || dist > out->size ())
+					return false;
+				size_t from = out->size () - dist;
+				for (int i = 0; i < len; i++)
+					out->push_back ((*out)[from + (size_t) i]);
+			}
+		}
+	}
+
+	bool Stored ()
+	{
+		bitBuf = 0;
+		bitCnt = 0;
+		if (inPos + 4 > inLen)
+			return false;
+		unsigned len = in[inPos] | (in[inPos + 1] << 8);
+		inPos += 4;
+		if (inPos + len > inLen)
+			return false;
+		out->insert (out->end (), in + inPos, in + inPos + len);
+		inPos += len;
+		return true;
+	}
+
+	bool Fixed ()
+	{
+		static bool built = false;
+		static Huffman lencode, distcode;
+		if (!built) {
+			short lengths[288];
+			int sym = 0;
+			for (; sym < 144; sym++) lengths[sym] = 8;
+			for (; sym < 256; sym++) lengths[sym] = 9;
+			for (; sym < 280; sym++) lengths[sym] = 7;
+			for (; sym < 288; sym++) lengths[sym] = 8;
+			Construct (lencode, lengths, 288);
+			for (sym = 0; sym < 30; sym++) lengths[sym] = 5;
+			Construct (distcode, lengths, 30);
+			built = true;
+		}
+		return Codes (lencode, distcode);
+	}
+
+	bool Dynamic ()
+	{
+		static const short order[19] = { 16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15 };
+		short lengths[320];
+		int nlen = Bits (5) + 257;
+		int ndist = Bits (5) + 1;
+		int ncode = Bits (4) + 4;
+		if (err || nlen > 286 || ndist > 30)
+			return false;
+		int index;
+		for (index = 0; index < ncode; index++)
+			lengths[order[index]] = (short) Bits (3);
+		for (; index < 19; index++)
+			lengths[order[index]] = 0;
+		Huffman lencode, distcode;
+		if (Construct (lencode, lengths, 19) != 0)
+			return false;
+		index = 0;
+		while (index < nlen + ndist) {
+			int symbol = Decode (lencode);
+			if (symbol < 0 || err)
+				return false;
+			if (symbol < 16) {
+				lengths[index++] = (short) symbol;
+			} else {
+				int len = 0;
+				if (symbol == 16) {
+					if (index == 0)
+						return false;
+					len = lengths[index - 1];
+					symbol = 3 + Bits (2);
+				} else if (symbol == 17) {
+					symbol = 3 + Bits (3);
+				} else {
+					symbol = 11 + Bits (7);
+				}
+				if (index + symbol > nlen + ndist)
+					return false;
+				while (symbol--)
+					lengths[index++] = (short) len;
+			}
+		}
+		if (lengths[256] == 0)
+			return false;
+		int e = Construct (lencode, lengths, nlen);
+		if (e < 0 || (e > 0 && nlen - lencode.count[0] != 1))
+			return false;
+		e = Construct (distcode, lengths + nlen, ndist);
+		if (e < 0 || (e > 0 && ndist - distcode.count[0] != 1))
+			return false;
+		return Codes (lencode, distcode);
+	}
+
+	bool Run ()
+	{
+		int last;
+		do {
+			last = Bits (1);
+			int type = Bits (2);
+			if (err)
+				return false;
+			bool ok = type == 0 ? Stored () : type == 1 ? Fixed () : type == 2 ? Dynamic () : false;
+			if (!ok)
+				return false;
+		} while (!last);
+		return true;
+	}
+};
+
+
+static bool InflateZlib (const Byte* src, size_t len, std::vector<Byte>& out)
+{
+	if (len < 2)
+		return false;
+	size_t skip = 0;
+	// zlib header (CMF/FLG); raw deflate streams are accepted too
+	if ((src[0] & 0x0F) == 8 && ((src[0] << 8) | src[1]) % 31 == 0)
+		skip = 2;
+	Inflater inf;
+	inf.in = src + skip;
+	inf.inLen = len - skip;
+	inf.out = &out;
+	return inf.Run ();
+}
+
+
+// --- TIFF LZW (MSB-first, early change) ---
+static bool DecodeLzw (const Byte* src, size_t len, std::vector<Byte>& out)
+{
+	std::vector<std::vector<Byte>> table;
+	auto reset = [&] () {
+		table.clear ();
+		table.reserve (4096);
+		for (int i = 0; i < 256; i++)
+			table.push_back (std::vector<Byte> (1, (Byte) i));
+		table.push_back (std::vector<Byte> ());	// 256 clear
+		table.push_back (std::vector<Byte> ());	// 257 eoi
+	};
+	reset ();
+	int codeLen = 9;
+	size_t bitPos = 0;
+	size_t totalBits = len * 8;
+	int prev = -1;
+	while (bitPos + (size_t) codeLen <= totalBits) {
+		int code = 0;
+		for (int i = 0; i < codeLen; i++) {
+			size_t b = bitPos + (size_t) i;
+			code = (code << 1) | ((src[b >> 3] >> (7 - (b & 7))) & 1);
+		}
+		bitPos += (size_t) codeLen;
+		if (code == 257)
+			break;
+		if (code == 256) {
+			reset ();
+			codeLen = 9;
+			prev = -1;
+			continue;
+		}
+		std::vector<Byte> entry;
+		if (code < (int) table.size ()) {
+			entry = table[(size_t) code];
+			if (prev >= 0) {
+				std::vector<Byte> ne = table[(size_t) prev];
+				ne.push_back (entry[0]);
+				table.push_back (ne);
+			}
+		} else if (prev >= 0 && code == (int) table.size ()) {
+			entry = table[(size_t) prev];
+			entry.push_back (entry[0]);
+			table.push_back (entry);
+		} else {
+			return false;
+		}
+		out.insert (out.end (), entry.begin (), entry.end ());
+		prev = code;
+		size_t next = table.size ();
+		if (next + 1 >= (size_t) (1 << codeLen) && codeLen < 12)
+			codeLen++;
+	}
+	return true;
+}
+
+}	// namespace
+
 bool ParseGeoTiff (const std::string& data, const BBox& fallbackBox, Terrain& out, std::string& error)
 {
 	TiffReader r (data);
@@ -881,8 +1175,9 @@ bool ParseGeoTiff (const std::string& data, const BBox& fallbackBox, Terrain& ou
 		error = "TIFF bez rozmerov";
 		return false;
 	}
-	if (compression != 1) {
-		error = u8"Komprimovaný TIFF (kompresia " + std::to_string (compression) + u8") nie je podporovaný – nastavte v službe nekomprimovaný výstup alebo formát ArcGrid";
+	int predictor = (int) get1 (317, 1);
+	if (compression != 1 && compression != 5 && compression != 8 && compression != 32946) {
+		error = u8"TIFF s kompresiou " + std::to_string (compression) + u8" nie je podporovaný (podporované: bez kompresie, LZW, Deflate)";
 		return false;
 	}
 	if (spp != 1 && planar != 1) {
@@ -896,21 +1191,37 @@ bool ParseGeoTiff (const std::string& data, const BBox& fallbackBox, Terrain& ou
 	}
 	size_t pixelStride = (size_t) bytesPerSample * (size_t) spp;
 
-	auto readSample = [&] (size_t off) -> double {
+	// reads one sample from a decoded chunk buffer
+	auto readSampleBuf = [&] (const Byte* b, bool le) -> double {
+		auto u16 = [&] () -> unsigned { return le ? (unsigned) (b[0] | (b[1] << 8)) : (unsigned) ((b[0] << 8) | b[1]); };
+		auto u32 = [&] () -> unsigned {
+			return le ? ((unsigned) b[0] | ((unsigned) b[1] << 8) | ((unsigned) b[2] << 16) | ((unsigned) b[3] << 24))
+					  : (((unsigned) b[0] << 24) | ((unsigned) b[1] << 16) | ((unsigned) b[2] << 8) | (unsigned) b[3]);
+		};
 		if (sampleFormat == 3) {
-			if (bytesPerSample == 4)
-				return r.F32 (off);
-			if (bytesPerSample == 8)
-				return r.F64 (off);
+			if (bytesPerSample == 4) {
+				unsigned u = u32 ();
+				float f;
+				memcpy (&f, &u, 4);
+				return f;
+			}
+			if (bytesPerSample == 8) {
+				Byte t[8];
+				for (int i = 0; i < 8; i++)
+					t[i] = le ? b[i] : b[7 - i];
+				double d;
+				memcpy (&d, t, 8);
+				return d;
+			}
 		}
 		if (sampleFormat == 2) {
-			if (bytesPerSample == 2)	return (short) r.U16 (off);
-			if (bytesPerSample == 4)	return (int) r.U32 (off);
-			if (bytesPerSample == 1)	return (signed char) r.d[off];
+			if (bytesPerSample == 2)	return (short) u16 ();
+			if (bytesPerSample == 4)	return (int) u32 ();
+			if (bytesPerSample == 1)	return (signed char) b[0];
 		}
-		if (bytesPerSample == 2)	return r.U16 (off);
-		if (bytesPerSample == 4)	return r.U32 (off);
-		return r.d[off];
+		if (bytesPerSample == 2)	return u16 ();
+		if (bytesPerSample == 4)	return u32 ();
+		return b[0];
 	};
 
 	// georeference
@@ -967,58 +1278,97 @@ bool ParseGeoTiff (const std::string& data, const BBox& fallbackBox, Terrain& ou
 	out.points.clear ();
 	out.points.reserve ((size_t) width * height);
 
-	if (tags.count (324) != 0) {
-		// tiled
-		int tw = (int) get1 (322, 0), th = (int) get1 (323, 0);
-		if (tw <= 0 || th <= 0) {
-			error = u8"TIFF dlaždice bez rozmerov";
-			return false;
-		}
-		std::vector<double> offs = TagValues (r, tags[324]);
-		int tilesAcross = (width + tw - 1) / tw;
-		int tilesDown = (height + th - 1) / th;
-		for (int ty = 0; ty < tilesDown; ty++) {
-			for (int tx = 0; tx < tilesAcross; tx++) {
-				size_t idx = (size_t) ty * tilesAcross + tx;
-				if (idx >= offs.size ())
-					continue;
-				size_t base = (size_t) offs[idx];
-				for (int y = 0; y < th; y++) {
-					int row = ty * th + y;
-					if (row >= height)
-						break;
-					for (int x = 0; x < tw; x++) {
-						int col = tx * tw + x;
-						if (col >= width)
-							continue;
-						size_t off = base + ((size_t) y * tw + x) * pixelStride;
-						if (!r.Ok (off, bytesPerSample))
-							continue;
-						addPixel (col, row, readSample (off));
-					}
-				}
+	bool tiled = tags.count (324) != 0;
+	int chunkW = tiled ? (int) get1 (322, 0) : width;
+	int chunkH = tiled ? (int) get1 (323, 0) : (int) get1 (278, height);
+	if (chunkH <= 0 || chunkH > height)
+		chunkH = height;
+	if (chunkW <= 0) {
+		error = u8"TIFF dlaždice bez rozmerov";
+		return false;
+	}
+	std::vector<double> offs = TagValues (r, tags[tiled ? 324u : 273u]);
+	std::vector<double> counts = tags.count (tiled ? 325u : 279u) ? TagValues (r, tags[tiled ? 325u : 279u]) : std::vector<double> ();
+	if (offs.empty ()) {
+		error = u8"TIFF bez dát";
+		return false;
+	}
+	int chunksAcross = (width + chunkW - 1) / chunkW;
+	int chunksDown = (height + chunkH - 1) / chunkH;
+	size_t rowBytes = (size_t) chunkW * pixelStride;
+
+	std::vector<Byte> buf;
+	std::vector<Byte> tmp;
+	for (int cy = 0; cy < chunksDown; cy++) {
+		for (int cx = 0; cx < chunksAcross; cx++) {
+			size_t idx = (size_t) cy * chunksAcross + cx;
+			if (idx >= offs.size ())
+				continue;
+			size_t off = (size_t) offs[idx];
+			size_t cnt = idx < counts.size () ? (size_t) counts[idx] : (data.size () > off ? data.size () - off : 0);
+			if (!r.Ok (off, cnt))
+				cnt = data.size () > off ? data.size () - off : 0;
+			const Byte* src = (const Byte*) data.data () + off;
+
+			buf.clear ();
+			bool ok = true;
+			if (compression == 1)
+				buf.assign (src, src + cnt);
+			else if (compression == 5)
+				ok = DecodeLzw (src, cnt, buf);
+			else
+				ok = InflateZlib (src, cnt, buf);
+			if (!ok && buf.empty ()) {
+				error = u8"TIFF sa nepodarilo dekomprimovať (blok " + std::to_string (idx) + ")";
+				return false;
 			}
-		}
-	} else {
-		std::vector<double> offs = tags.count (273) ? TagValues (r, tags[273]) : std::vector<double> ();
-		int rowsPerStrip = (int) get1 (278, height);
-		if (rowsPerStrip <= 0)
-			rowsPerStrip = height;
-		if (offs.empty ()) {
-			error = u8"TIFF bez dát";
-			return false;
-		}
-		for (int row = 0; row < height; row++) {
-			size_t strip = (size_t) (row / rowsPerStrip);
-			if (strip >= offs.size ())
-				break;
-			size_t rowInStrip = (size_t) (row % rowsPerStrip);
-			size_t base = (size_t) offs[strip] + rowInStrip * (size_t) width * pixelStride;
-			for (int col = 0; col < width; col++) {
-				size_t off = base + (size_t) col * pixelStride;
-				if (!r.Ok (off, bytesPerSample))
+			size_t rowsInChunk = rowBytes > 0 ? buf.size () / rowBytes : 0;
+			if (rowsInChunk > (size_t) chunkH)
+				rowsInChunk = (size_t) chunkH;
+
+			bool le = r.le;
+			if (predictor == 3) {
+				// floating point predictor: undo byte differencing, then de-interleave byte planes (MSB first)
+				size_t wc = (size_t) chunkW * spp;
+				tmp.resize (rowBytes);
+				for (size_t row = 0; row < rowsInChunk; row++) {
+					Byte* rp = buf.data () + row * rowBytes;
+					for (size_t i = (size_t) spp; i < rowBytes; i++)
+						rp[i] = (Byte) (rp[i] + rp[i - (size_t) spp]);
+					memcpy (tmp.data (), rp, rowBytes);
+					for (size_t j = 0; j < wc; j++)
+						for (int b = 0; b < bytesPerSample; b++)
+							rp[j * bytesPerSample + (size_t) (bytesPerSample - b - 1)] = tmp[(size_t) b * wc + j];
+				}
+				le = true;
+			}
+
+			for (size_t y = 0; y < rowsInChunk; y++) {
+				int row = cy * chunkH + (int) y;
+				if (row >= height)
 					break;
-				addPixel (col, row, readSample (off));
+				const Byte* rp = buf.data () + y * rowBytes;
+				long long acc = 0;
+				double accF = 0.0;
+				for (int x = 0; x < chunkW; x++) {
+					double v = readSampleBuf (rp + (size_t) x * pixelStride, le);
+					if (predictor == 2) {
+						if (sampleFormat == 3) {
+							accF = x == 0 ? v : accF + v;
+							v = accF;
+						} else {
+							acc = x == 0 ? (long long) v : acc + (long long) v;
+							long long mask = bytesPerSample >= 8 ? -1LL : ((1LL << (bytesPerSample * 8)) - 1);
+							long long w = acc & mask;
+							if (sampleFormat == 2 && bytesPerSample < 8 && (w >> (bytesPerSample * 8 - 1)) & 1)
+								w -= (1LL << (bytesPerSample * 8));
+							v = (double) w;
+						}
+					}
+					int col = cx * chunkW + x;
+					if (col < width)
+						addPixel (col, row, v);
+				}
 			}
 		}
 	}
