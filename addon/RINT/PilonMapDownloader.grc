@@ -1,0 +1,27 @@
+/* Localizable resources - Pilon Map Downloader (Archicad 23) */
+
+#include "ResourceIds.hpp"
+
+'STR#' ID_ADDON_INFO "Add-on Name and Description" {
+/* [  1] */		"Pilon Map Downloader"
+/* [  2] */		"Mapove a 3D podklady SR (UGKK SR) - kataster, ortofoto, teren DMR 5.0"
+}
+
+'STR#' ID_MENU_STRINGS "Strings for the Menu" {
+/* [   ] */		"Pilon"
+/* [  1] */		"Map Downloader^ES^EE^EI^ED^EW^E3^EL"
+}
+
+'STR#' ID_MENU_PROMPT "Prompt strings for the Menu" {
+/* [  1] */		"Otvori paletu na stiahnutie mapovych podkladov"
+}
+
+/* --- Dockable browser palette ----------------------------------------------*/
+
+'GDLG'  ID_PALETTE    Palette | topCaption | close | grow   0   0  460  720  "Map Downloader"  {
+/* [  1] */ Browser			0   0  460  720
+}
+
+'DLGH'  ID_PALETTE  DLG_Map_Palette {
+1	"Browser Control"		Browser_0
+}

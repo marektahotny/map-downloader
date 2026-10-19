@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pilon Map Downloader</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+:root {
+	--bg: #f4f5f2;
+	--panel: #ffffff;
+	--ink: #1f2421;
+	--muted: #6b736d;
+	--line: #dfe3dd;
+	--accent: #2f6f4f;
+	--accent-ink: #ffffff;
+	--accent-soft: #e3efe8;
+	--warn: #a4561b;
+	--err: #b3261e;
+	--ok: #2f6f4f;
+	--sel: #e0522d;
+	--radius: 6px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
+	font: 12px/1.4 "Segoe UI", Tahoma, Arial, sans-serif; }
+body { display: flex; flex-direction: column; overflow: hidden; }
+header { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); }
+header .brand { font-weight: 700; letter-spacing: .02em; }
+header .brand span { color: var(--accent); }
+header .ver { color: var(--muted); font-size: 11px; }
+header .spacer { flex: 1; }
+.iconbtn { border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); padding: 3px 8px; cursor: pointer; color: var(--ink); font: inherit; }
+.iconbtn:hover { border-color: var(--accent); color: var(--accent); }
+
+#search { display: flex; gap: 6px; padding: 6px 10px; background: var(--panel); border-bottom: 1px solid var(--line); position: relative; }
+#search input { flex: 1; }
+#searchResults { position: absolute; top: 100%; left: 10px; right: 10px; z-index: 2000; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 6px 18px rgba(0,0,0,.12); max-height: 220px; overflow: auto; display: none; }
+#searchResults div { padding: 6px 8px; cursor: pointer; border-bottom: 1px solid var(--line); }
+#searchResults div:hover { background: var(--accent-soft); }
+
+#mapWrap { position: relative; height: 42vh; min-height: 220px; border-bottom: 1px solid var(--line); }
+#map { position: absolute; top: 0; left: 0; right: 0; bottom: 0; }
+#mapTools { position: absolute; z-index: 1000; left: 8px; bottom: 8px; display: flex; gap: 4px; flex-wrap: wrap; }
+#mapTools button { background: rgba(255,255,255,.95); }
+#mapTools button.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+#mapHint { position: absolute; z-index: 1000; left: 50%; top: 8px; transform: translateX(-50%); background: rgba(31,36,33,.85); color: #fff; padding: 4px 10px; border-radius: 12px; display: none; white-space: nowrap; }
+#coords { position: absolute; z-index: 1000; right: 8px; bottom: 8px; background: rgba(255,255,255,.9); padding: 2px 6px; border-radius: 4px; font-variant-numeric: tabular-nums; color: var(--muted); }
+
+#panel { flex: 1; overflow-y: auto; padding: 8px 10px 80px; }
+section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 10px; margin-bottom: 8px; }
+section h2 { font-size: 12px; margin: 0 0 6px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+section h2 .badge { text-transform: none; letter-spacing: 0; }
+.row { display: flex; align-items: center; gap: 6px; margin: 4px 0; flex-wrap: wrap; }
+.row label { display: inline-flex; align-items: center; gap: 4px; }
+.grow { flex: 1; }
+.muted { color: var(--muted); }
+.small { font-size: 11px; }
+.num { font-variant-numeric: tabular-nums; }
+input[type=text], input[type=number], select, textarea { font: inherit; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; background: #fff; color: var(--ink); }
+input[type=number] { width: 80px; }
+textarea { width: 100%; min-height: 220px; font-family: Consolas, monospace; font-size: 11px; }
+button { font: inherit; }
+.btn { border: 1px solid var(--line); background: #fff; border-radius: var(--radius); padding: 4px 10px; cursor: pointer; color: var(--ink); }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn:disabled { opacity: .5; cursor: default; }
+.link { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; text-decoration: underline; font: inherit; }
+.badge { display: inline-block; padding: 0 6px; border-radius: 9px; background: var(--accent-soft); color: var(--accent); font-size: 11px; }
+.item { border-top: 1px solid var(--line); padding: 6px 0; }
+.item:first-of-type { border-top: 0; }
+.item .desc { color: var(--muted); font-size: 11px; margin-left: 20px; }
+.sub { margin-left: 20px; }
+input[type=range] { flex: 1; }
+.slider { display: flex; align-items: center; gap: 6px; }
+.slider .val { width: 44px; text-align: right; }
+
+#actions { position: fixed; left: 0; right: 0; bottom: 0; background: var(--panel); border-top: 1px solid var(--line); padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; }
+#actions .row { margin: 0; }
+#status { min-height: 16px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#status.err { color: var(--err); }
+#status.ok { color: var(--ok); }
+#busy { height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); background-size: 200% 100%; animation: busy 1s linear infinite; visibility: hidden; }
+#busy.on { visibility: visible; }
+@keyframes busy { from { background-position: 100% 0; } to { background-position: -100% 0; } }
+
+#log { margin: 0; padding: 0; list-style: none; }
+#log li { padding: 3px 0; border-top: 1px dashed var(--line); }
+#log li:first-child { border-top: 0; }
+#log .ok { color: var(--ok); }
+#log .err { color: var(--err); }
+
+.modal { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,.35); z-index: 3000; display: none; align-items: flex-start; justify-content: center; overflow-y: auto; padding: 16px 8px; }
+.modal.open { display: flex; }
+.modal .box { background: var(--panel); border-radius: 8px; width: 100%; max-width: 520px; padding: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+.modal h3 { margin: 0 0 8px; font-size: 14px; }
+.modal table { width: 100%; border-collapse: collapse; }
+.modal td, .modal th { padding: 3px 4px; text-align: left; border-bottom: 1px solid var(--line); }
+.modal th { color: var(--muted); font-weight: 600; font-size: 11px; }
+.modal td input[type=text] { width: 100%; }
+.modal td input[type=number] { width: 54px; }
+.tabs { display: flex; gap: 4px; margin-bottom: 8px; }
+.tabs button { flex: 1; }
+.tabs button.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.test-item { border-top: 1px solid var(--line); padding: 4px 0; word-break: break-all; }
+.test-item b.ok { color: var(--ok); }
+.test-item b.err { color: var(--err); }
+
+#preview3d { width: 100%; height: 240px; background: #dfe8e2; border-radius: 4px; display: none; cursor: grab; }
+</style>
+</head>
+<body>
+
+<header>
+	<div class="brand">Pilon <span>Map Downloader</span></div>
+	<div class="ver" id="ver">AC23</div>
+	<div class="spacer"></div>
+	<button class="iconbtn" id="btnSettings" title="Nastavenie vrstiev a atribútov">⚙ Nastavenie</button>
+</header>
+
+<div id="search">
+	<input type="text" id="q" placeholder="Adresa, obec, parcela… alebo súradnice (48.37, 17.58 / Y X)">
+	<button class="btn" id="btnFind">Nájsť</button>
+	<div id="searchResults"></div>
+</div>
+
+<div id="mapWrap">
+	<div id="map"></div>
+	<div id="mapHint"></div>
+	<div id="mapTools">
+		<button class="iconbtn" id="toolRect" title="Výber územia obdĺžnikom">▭ Obdĺžnik</button>
+		<button class="iconbtn" id="toolPoly" title="Výber územia polygónom">⬡ Polygón</button>
+		<button class="iconbtn" id="toolOrigin" title="Umiestniť bod lokálneho počiatku">✛ Počiatok</button>
+	</div>
+	<div id="coords"></div>
+</div>
+
+<div id="panel">
+
+	<section>
+		<h2>Výber územia <span class="badge" id="areaBadge">nevybrané</span></h2>
+		<div class="row small muted" id="areaInfo">Kliknite na ▭ Obdĺžnik alebo ⬡ Polygón a nakreslite výber do mapy. Polygón ukončíte dvojklikom alebo kliknutím na prvý bod.</div>
+		<div class="row"><button class="link" id="btnClearArea">Zrušiť výber územia</button></div>
+	</section>
+
+	<section>
+		<h2>Podklady na stiahnutie</h2>
+
+		<div class="item">
+			<label><input type="checkbox" id="itCadC" checked> <b>Katastrálna mapa – parcely C</b></label>
+			<div class="desc">Hranice parciel a čísla parciel (ÚGKK SR, INSPIRE WFS). Vkladá sa ako čiary a texty do samostatných vrstiev.</div>
+		</div>
+		<div class="item">
+			<label><input type="checkbox" id="itCadE"> <b>Parcely registra E</b></label>
+			<div class="desc">Pôvodné vlastnícke parcely (UO) na samostatnej vrstve – nekopírujú stav v teréne.</div>
+		</div>
+		<div class="item">
+			<label><input type="checkbox" id="itOrtho" checked> <b>Ortofoto</b></label>
+			<div class="desc">Ortofotomozaika ZBGIS, cca 0,25 m/px. Do 4000 px plná ostrosť do 1 × 1 km.</div>
+			<div class="sub"><label><input type="checkbox" id="orthoHQ"> Vysoká kvalita (až 16 000 px, plná ostrosť do 4 × 4 km – veľký súbor)</label></div>
+		</div>
+		<div class="item">
+			<label><input type="checkbox" id="itTerrain" checked> <b>Terén DMR 5.0</b></label>
+			<div class="desc">Digitálny model reliéfu (holý terén). Vkladá sa ako mesh vždy v lokálnom počiatku; dá sa uložiť aj ako XYZ.</div>
+			<div class="row sub">
+				<button class="btn" id="btnLoadTerrain">Načítať terén zo služby</button>
+				<button class="btn" id="btnLoadTerrainFile">Zo súboru…</button>
+			</div>
+			<div class="sub" id="terrainBox" style="display:none">
+				<div class="row small"><span class="badge" id="terrainBadge"></span><span class="muted" id="terrainInfo"></span></div>
+				<div class="row"><label><input type="checkbox" id="redOn" checked> Pred vložením optimalizovať počet bodov</label></div>
+				<div id="redBox">
+					<div class="row">
+						<label><input type="radio" name="redMode" value="0" checked> Rovnomerná redukcia</label>
+						<label><input type="radio" name="redMode" value="1"> Klesajúca hustota od počiatku</label>
+					</div>
+					<div id="redUniform">
+						<div class="slider"><span class="small muted" style="width:90px">Zachovať</span><input type="range" id="redKeep" min="1" max="100" value="25"><span class="val num" id="redKeepVal">25 %</span></div>
+					</div>
+					<div id="redDistance" style="display:none">
+						<div class="slider"><span class="small muted" style="width:90px">Blízko počiatku</span><input type="range" id="redNear" min="1" max="100" value="100"><span class="val num" id="redNearVal">100 %</span></div>
+						<div class="slider"><span class="small muted" style="width:90px">Ďaleko</span><input type="range" id="redFar" min="1" max="100" value="6"><span class="val num" id="redFarVal">6 %</span></div>
+					</div>
+					<div class="row small"><span class="muted">Zostane bodov:</span> <b class="num" id="redCount">–</b></div>
+				</div>
+				<div class="row">
+					<button class="btn" id="btnPreview3d">Náhľad 3D</button>
+					<button class="btn" id="btnExportXyz">Uložiť XYZ…</button>
+					<label class="small"><input type="checkbox" id="xyzLocal"> v lokálnom počiatku</label>
+					<label class="small"><input type="checkbox" id="xyzPositive"> kladné Y X</label>
+				</div>
+				<canvas id="preview3d"></canvas>
+			</div>
+		</div>
+		<div class="item">
+			<label><input type="checkbox" id="itOrigin" checked> <b>Značka počiatku</b></label>
+			<div class="desc">Hotspot a text so súradnicami S-JTSK a výškou 0,00 v bode počiatku.</div>
+		</div>
+	</section>
+
+	<section>
+		<h2>Lokálny počiatok a výška</h2>
+		<div class="row small" id="originInfo">Počiatok: <span class="muted">stred výberu</span></div>
+		<div class="row">
+			<button class="btn" id="btnOriginPick">✛ Umiestniť bod počiatku</button>
+			<button class="btn" id="btnOriginLoad" title="Načíta počiatok z Možnosti › Nastavenia projektu › Umiestnenie projektu">⤓ Načítať z umiestnenia projektu</button>
+			<button class="link" id="btnOriginClear">zrušiť bod</button>
+		</div>
+		<div class="row">
+			<label>Výška 0,00 = <input type="number" id="h0" step="0.01" value="0"> m n. m. (Bpv)</label>
+		</div>
+		<div class="row"><button class="btn" id="btnOriginSave" title="Zapíše zemepisnú polohu počiatku a nadmorskú výšku do umiestnenia projektu">Preniesť do umiestnenia projektu</button></div>
+		<div class="small muted">Terén sa vkladá vždy v lokálnom počiatku (v bode počiatku, inak v strede výberu). Súradnice počiatku sa uložia aj do súboru bod_pociatku.txt pri exporte XYZ.</div>
+	</section>
+
+	<section>
+		<h2>Spôsob vkladania</h2>
+		<div class="row">
+			<label><input type="checkbox" id="insJtsk"> Vložiť v S-JTSK</label>
+			<label><input type="checkbox" id="insLocal" checked> Vložiť v lokálnom počiatku</label>
+		</div>
+		<div class="row small muted">Ak zaškrtnete obe možnosti, kataster a ortofoto sa vložia dvakrát – raz v každej sústave.</div>
+		<div class="row">
+			<span>Cieľ pre kataster a ortofoto:</span>
+			<label><input type="radio" name="target" value="plan" checked> Pôdorys</label>
+			<label><input type="radio" name="target" value="worksheet"> Pracovný list</label>
+		</div>
+	</section>
+
+	<section>
+		<h2>Výsledok</h2>
+		<ul id="log"><li class="muted">Zatiaľ nič.</li></ul>
+	</section>
+
+	<div class="small muted" style="padding:0 2px">
+		Zdroj údajov: © ÚGKK SR (CC BY 4.0) · geokódovanie © OpenStreetMap. Údaje sú informatívne, bez záruky.
+	</div>
+</div>
+
+<div id="actions">
+	<div id="busy"></div>
+	<div class="row">
+		<button class="btn primary grow" id="btnPlace">Vložiť do Archicadu</button>
+		<button class="btn" id="btnExportOrtho" title="Uloží ortofoto ako JPG + JGW">Ortofoto…</button>
+	</div>
+	<div id="status">Pripravené.</div>
+</div>
+
+<!-- Settings -->
+<div class="modal" id="settingsModal">
+	<div class="box">
+		<h3>Nastavenie vrstiev a atribútov</h3>
+		<div class="tabs">
+			<button class="btn active" data-tab="tabLayers">Vrstvy a perá</button>
+			<button class="btn" data-tab="tabServices">Služby</button>
+		</div>
+		<div id="tabLayers">
+			<table>
+				<thead><tr><th>Prvok</th><th>Vrstva</th><th>Pero</th><th>Typ čiary</th></tr></thead>
+				<tbody id="layerRows"></tbody>
+			</table>
+			<div class="row"><label>Výška textov <input type="number" id="setTextSize" step="0.1" min="0.5" value="2"> mm</label></div>
+			<div class="row"><label>Názov pracovného listu <input type="text" id="setWorksheet" value="Mapové podklady"></label></div>
+			<div class="row"><label><input type="checkbox" id="setExact" checked> Obrys terénu presne podľa zadaného tvaru</label></div>
+			<div class="small muted">Ak je obrys vypnutý, tvar meshu vychádza len z nameraných bodov (konvexný obal). Materiály meshu sa preberajú z aktuálneho nastavenia nástroja Mesh.</div>
+		</div>
+		<div id="tabServices" style="display:none">
+			<div class="small muted">Adresy a parametre služieb ÚGKK SR (JSON). Upravené hodnoty sa uložia do %APPDATA%\PilonMapDownloader\services.json.</div>
+			<textarea id="servicesJson" spellcheck="false"></textarea>
+			<div class="row">
+				<button class="btn" id="btnTestServices">Test služieb</button>
+				<button class="btn" id="btnSaveServices">Uložiť služby</button>
+				<button class="link" id="btnResetServices">obnoviť predvolené</button>
+			</div>
+			<div id="testResults"></div>
+		</div>
+		<div class="row" style="justify-content:flex-end;margin-top:10px">
+			<button class="link" id="btnResetSettings">Obnoviť predvolené</button>
+			<span class="grow"></span>
+			<button class="btn" id="btnCancelSettings">Zrušiť</button>
+			<button class="btn primary" id="btnSaveSettings">Uložiť</button>
+		</div>
+	</div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.12.1/dist/proj4.js"></script>
+<script>
+(function () {
+	'use strict';
+
+	// =========================================================================
+	// Bridge to the Archicad add-on
+	// =========================================================================
+	var pending = {};
+	var nextId = 1;
+	var hasBridge = typeof window.ACAPI !== 'undefined' && window.ACAPI && typeof window.ACAPI.Request === 'function';
+
+	window.PMD = {
+		onResponse: function (resp) {
+			var cb = pending[resp.id];
+			if (cb) {
+				delete pending[resp.id];
+				cb(resp);
+			}
+			setBusy(Object.keys(pending).length > 0);
+		},
+		onProgress: function (msg) { setStatus(msg); }
+	};
+
+	function request(cmd, payload) {
+		return new Promise(function (resolve) {
+			var id = nextId++;
+			var msg = payload ? JSON.parse(JSON.stringify(payload)) : {};
+			msg.cmd = cmd;
+			msg.id = id;
+			if (!hasBridge) {
+				resolve({ ok: false, error: 'Mimo Archicadu – príkaz „' + cmd + '“ nie je dostupný.' });
+				return;
+			}
+			pending[id] = resolve;
+			setBusy(true);
+			try {
+				window.ACAPI.Request(JSON.stringify(msg));
+			} catch (e) {
+				delete pending[id];
+				resolve({ ok: false, error: String(e) });
+			}
+		});
+	}
+
+	// =========================================================================
+	// Helpers
+	// =========================================================================
+	function $(id) { return document.getElementById(id); }
+	function fmt(v, d) { return Number(v).toLocaleString('sk-SK', { minimumFractionDigits: d, maximumFractionDigits: d }); }
+	function setStatus(text, cls) {
+		var s = $('status');
+		s.textContent = text;
+		s.className = cls || '';
+	}
+	function setBusy(on) { $('busy').className = on ? 'on' : ''; }
+	function debounce(fn, ms) {
+		var t = null;
+		return function () {
+			var args = arguments;
+			clearTimeout(t);
+			t = setTimeout(function () { fn.apply(null, args); }, ms);
+		};
+	}
+
+	// S-JTSK / Krovak East North, Slovak JTSK03 realisation parameters
+	proj4.defs('EPSG:5514', '+proj=krovak +lat_0=49.5 +lon_0=24.83333333333333 +alpha=30.28813972222222 +k=0.9999 +x_0=0 +y_0=0 +ellps=bessel +towgs84=485.021,169.465,483.839,7.786342,4.397554,4.102655,0 +units=m +no_defs');
+	function toJtsk(latlng) { var p = proj4('EPSG:4326', 'EPSG:5514', [latlng.lng, latlng.lat]); return { e: p[0], n: p[1] }; }
+	function toLatLng(en) { var p = proj4('EPSG:5514', 'EPSG:4326', [en.e, en.n]); return L.latLng(p[1], p[0]); }
+
+	// =========================================================================
+	// State + settings
+	// =========================================================================
+	var services = null;
+	var defaultSettings = {
+		layers: {
+			cadastreC: { layer: 'KN_parcely_C', pen: 1, lineType: '' },
+			cadastreCText: { layer: 'KN_cisla_C', pen: 1 },
+			cadastreE: { layer: 'KN_parcely_E', pen: 3, lineType: '' },
+			cadastreEText: { layer: 'KN_cisla_E', pen: 3 },
+			ortho: { layer: 'ORTOFOTO' },
+			terrain: { layer: 'TEREN_DMR5' },
+			origin: { layer: 'POCIATOK' }
+		},
+		textSize: 2.0,
+		worksheetName: 'Mapové podklady',
+		terrainExactOutline: true,
+		ui: {}
+	};
+	var settings = JSON.parse(JSON.stringify(defaultSettings));
+	var layerLabels = {
+		cadastreC: 'Kataster C – hranice',
+		cadastreCText: 'Kataster C – čísla',
+		cadastreE: 'Kataster E – hranice',
+		cadastreEText: 'Kataster E – čísla',
+		ortho: 'Ortofoto',
+		terrain: 'Terén (mesh)',
+		origin: 'Počiatok'
+	};
+
+	var area = null;		// [{e,n}] closed ring
+	var origin = null;		// {e,n} or null
+	var terrain = null;		// info from loadTerrain
+
+	// =========================================================================
+	// Map
+	// =========================================================================
+	var map = L.map('map', { zoomControl: true, doubleClickZoom: false }).setView([48.377, 17.588], 15);
+	var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20, maxNativeZoom: 19, attribution: '© OpenStreetMap' });
+	var orthoLayer = L.tileLayer.wms('https://zbgisws.skgeodesy.sk/zbgis_ortofoto_wms/service.svc/get', { layers: '1', format: 'image/jpeg', version: '1.3.0', maxZoom: 21, attribution: '© ÚGKK SR' });
+	var cadLayer = L.tileLayer.wms('https://kataster.skgeodesy.sk/eskn/services/NR/kn_wms_norm/MapServer/WmsServer', { layers: '1,2,3,5,8,10', format: 'image/png', transparent: true, version: '1.3.0', maxZoom: 21, zIndex: 300, attribution: '© ÚGKK SR' });
+	var cadELayer = L.tileLayer.wms('https://kataster.skgeodesy.sk/eskn/services/NR/uo_wms_norm/MapServer/WmsServer', { layers: '0,2', format: 'image/png', transparent: true, version: '1.3.0', maxZoom: 21, zIndex: 301, attribution: '© ÚGKK SR' });
+	osm.addTo(map);
+	cadLayer.addTo(map);
+	L.control.layers({ 'Mapa (OSM)': osm, 'Ortofoto ZBGIS': orthoLayer }, { 'Kataster C': cadLayer, 'Parcely E': cadELayer }, { position: 'topright', collapsed: true }).addTo(map);
+	L.control.scale({ imperial: false, position: 'topleft' }).addTo(map);
+
+	var areaLayer = L.layerGroup().addTo(map);
+	var drawLayer = L.layerGroup().addTo(map);
+	var originMarker = null;
+
+	map.on('mousemove', function (e) {
+		var j = toJtsk(e.latlng);
+		$('coords').textContent = 'Y ' + fmt(-j.e, 2) + '  X ' + fmt(-j.n, 2);
+	});
+
+	// --- drawing tools ---
+	var tool = null;
+	var drawPts = [];
+	var rectStart = null;
+
+	function setTool(t) {
+		tool = t;
+		drawPts = [];
+		rectStart = null;
+		drawLayer.clearLayers();
+		['toolRect', 'toolPoly', 'toolOrigin'].forEach(function (id) { $(id).classList.remove('active'); });
+		var hint = $('mapHint');
+		if (t === 'rect') { $('toolRect').classList.add('active'); hint.textContent = 'Kliknite na prvý a potom na protiľahlý roh obdĺžnika'; }
+		if (t === 'poly') { $('toolPoly').classList.add('active'); hint.textContent = 'Klikajte body polygónu, ukončite dvojklikom alebo na prvom bode'; }
+		if (t === 'origin') { $('toolOrigin').classList.add('active'); hint.textContent = 'Kliknite na bod lokálneho počiatku'; }
+		hint.style.display = t ? 'block' : 'none';
+		map.getContainer().style.cursor = t ? 'crosshair' : '';
+		if (t)
+			map.dragging.enable();
+	}
+
+	function finishArea(latlngs) {
+		var ring = latlngs.map(toJtsk);
+		if (ring.length < 3)
+			return;
+		ring.push({ e: ring[0].e, n: ring[0].n });
+		area = ring;
+		terrain = null;
+		updateTerrainBox();
+		drawArea();
+		setTool(null);
+		saveUiState();
+	}
+
+	map.on('click', function (e) {
+		if (tool === 'origin') {
+			setOrigin(toJtsk(e.latlng));
+			setTool(null);
+			return;
+		}
+		if (tool === 'rect') {
+			if (!rectStart) {
+				rectStart = e.latlng;
+				return;
+			}
+			var a = toJtsk(rectStart), b = toJtsk(e.latlng);
+			var minE = Math.min(a.e, b.e), maxE = Math.max(a.e, b.e), minN = Math.min(a.n, b.n), maxN = Math.max(a.n, b.n);
+			if (maxE - minE < 1 || maxN - minN < 1)
+				return;
+			// rectangle axis-aligned in S-JTSK (not in Web Mercator)
+			finishArea([toLatLng({ e: minE, n: minN }), toLatLng({ e: maxE, n: minN }), toLatLng({ e: maxE, n: maxN }), toLatLng({ e: minE, n: maxN })]);
+			return;
+		}
+		if (tool === 'poly') {
+			if (drawPts.length >= 3) {
+				var first = map.latLngToContainerPoint(drawPts[0]);
+				var here = map.latLngToContainerPoint(e.latlng);
+				if (first.distanceTo(here) < 10) {
+					finishArea(drawPts.slice());
+					return;
+				}
+			}
+			drawPts.push(e.latlng);
+			redrawTemp(e.latlng);
+		}
+	});
+
+	map.on('dblclick', function (e) {
+		if (tool === 'poly' && drawPts.length >= 3)
+			finishArea(drawPts.slice());
+	});
+
+	map.on('mousemove', function (e) {
+		if (tool === 'rect' && rectStart) {
+			drawLayer.clearLayers();
+			var a = toJtsk(rectStart), b = toJtsk(e.latlng);
+			var minE = Math.min(a.e, b.e), maxE = Math.max(a.e, b.e), minN = Math.min(a.n, b.n), maxN = Math.max(a.n, b.n);
+			L.polygon([toLatLng({ e: minE, n: minN }), toLatLng({ e: maxE, n: minN }), toLatLng({ e: maxE, n: maxN }), toLatLng({ e: minE, n: maxN })],
+				{ color: '#e0522d', weight: 2, dashArray: '5,4', fillOpacity: .08, interactive: false }).addTo(drawLayer);
+		}
+		if (tool === 'poly' && drawPts.length)
+			redrawTemp(e.latlng);
+	});
+
+	function redrawTemp(cursor) {
+		drawLayer.clearLayers();
+		var pts = drawPts.concat(cursor ? [cursor] : []);
+		L.polyline(pts, { color: '#e0522d', weight: 2, dashArray: '5,4', interactive: false }).addTo(drawLayer);
+		drawPts.forEach(function (p, i) {
+			L.circleMarker(p, { radius: i === 0 ? 5 : 3, color: '#e0522d', fillColor: '#fff', fillOpacity: 1, weight: 2, interactive: false }).addTo(drawLayer);
+		});
+	}
+
+	document.addEventListener('keydown', function (e) {
+		if (e.key === 'Escape') setTool(null);
+		if (e.key === 'Backspace' && tool === 'poly' && drawPts.length && document.activeElement === document.body) { drawPts.pop(); redrawTemp(null); }
+	});
+
+	function polygonArea(r) {
+		var a = 0;
+		for (var i = 0; i + 1 < r.length; i++) a += r[i].e * r[i + 1].n - r[i + 1].e * r[i].n;
+		return Math.abs(a / 2);
+	}
+	function bounds(r) {
+		var b = { minE: Infinity, minN: Infinity, maxE: -Infinity, maxN: -Infinity };
+		r.forEach(function (p) { b.minE = Math.min(b.minE, p.e); b.maxE = Math.max(b.maxE, p.e); b.minN = Math.min(b.minN, p.n); b.maxN = Math.max(b.maxN, p.n); });
+		return b;
+	}
+	function areaCenter() { var b = bounds(area); return { e: (b.minE + b.maxE) / 2, n: (b.minN + b.maxN) / 2 }; }
+
+	function drawArea() {
+		areaLayer.clearLayers();
+		if (!area) {
+			$('areaBadge').textContent = 'nevybrané';
+			$('areaInfo').textContent = 'Kliknite na ▭ Obdĺžnik alebo ⬡ Polygón a nakreslite výber do mapy. Polygón ukončíte dvojklikom alebo kliknutím na prvý bod.';
+			updateOriginInfo();
+			return;
+		}
+		L.polygon(area.map(toLatLng), { color: '#e0522d', weight: 2, fillOpacity: .06, interactive: false }).addTo(areaLayer);
+		var b = bounds(area);
+		var a = polygonArea(area);
+		$('areaBadge').textContent = fmt(a / 10000, 2) + ' ha';
+		$('areaInfo').textContent = 'Rozmer ' + fmt(b.maxE - b.minE, 0) + ' × ' + fmt(b.maxN - b.minN, 0) + ' m · plocha ' + fmt(a, 0) + ' m² · ' + (area.length - 1) + ' vrcholov';
+		updateOriginInfo();
+	}
+
+	function setOrigin(en) {
+		origin = en;
+		if (originMarker) { map.removeLayer(originMarker); originMarker = null; }
+		if (origin) {
+			originMarker = L.marker(toLatLng(origin), {
+				icon: L.divIcon({ className: '', html: '<div style="width:18px;height:18px;margin:-9px 0 0 -9px;position:relative"><div style="position:absolute;left:8px;top:0;width:2px;height:18px;background:#1f5fbf"></div><div style="position:absolute;top:8px;left:0;height:2px;width:18px;background:#1f5fbf"></div></div>', iconSize: [0, 0] }),
+				draggable: true
+			}).addTo(map);
+			originMarker.on('dragend', function () { origin = toJtsk(originMarker.getLatLng()); updateOriginInfo(); saveUiState(); });
+		}
+		updateOriginInfo();
+		saveUiState();
+		refreshReduceCount();
+	}
+
+	function effectiveOrigin() { return origin || (area ? areaCenter() : null); }
+
+	function updateOriginInfo() {
+		var o = effectiveOrigin();
+		var label = origin ? 'vlastný bod' : 'stred výberu';
+		$('originInfo').innerHTML = o ? ('Počiatok (' + label + '): <span class="num">Y ' + fmt(-o.e, 2) + ' · X ' + fmt(-o.n, 2) + '</span>') : 'Počiatok: <span class="muted">stred výberu (zatiaľ nevybrané)</span>';
+	}
+
+	$('toolRect').onclick = function () { setTool(tool === 'rect' ? null : 'rect'); };
+	$('toolPoly').onclick = function () { setTool(tool === 'poly' ? null : 'poly'); };
+	$('toolOrigin').onclick = function () { setTool(tool === 'origin' ? null : 'origin'); };
+	$('btnOriginPick').onclick = function () { setTool('origin'); };
+	$('btnOriginClear').onclick = function () { setOrigin(null); };
+	$('btnClearArea').onclick = function () { area = null; terrain = null; updateTerrainBox(); drawArea(); saveUiState(); };
+
+	// =========================================================================
+	// Search (Nominatim + coordinates)
+	// =========================================================================
+	function parseCoords(q) {
+		var m = q.replace(/,/g, ' ').trim().split(/\s+/).map(Number);
+		if (m.length === 2 && !isNaN(m[0]) && !isNaN(m[1])) {
+			var a = m[0], b = m[1];
+			if (Math.abs(a) < 90 && Math.abs(b) < 180) return L.latLng(a, b);
+			if (Math.abs(a) > 1000 && Math.abs(b) > 1000) {
+				var e = -Math.abs(Math.min(Math.abs(a), Math.abs(b))), n = -Math.abs(Math.max(Math.abs(a), Math.abs(b)));
+				return toLatLng({ e: e, n: n });
+			}
+		}
+		return null;
+	}
+
+	function doSearch() {
+		var q = $('q').value.trim();
+		var box = $('searchResults');
+		if (!q) return;
+		var c = parseCoords(q);
+		if (c) {
+			map.setView(c, 18);
+			box.style.display = 'none';
+			return;
+		}
+		var url = (services && services.geocoder) || 'https://nominatim.openstreetmap.org/search';
+		url += '?format=json&limit=8&countrycodes=sk,cz&accept-language=sk&q=' + encodeURIComponent(q);
+		setStatus('Hľadám…');
+		fetch(url).then(function (r) { return r.json(); }).then(function (list) {
+			box.innerHTML = '';
+			if (!list.length) {
+				box.innerHTML = '<div class="muted">Nič sa nenašlo.</div>';
+			}
+			list.forEach(function (it) {
+				var d = document.createElement('div');
+				d.textContent = it.display_name;
+				d.onclick = function () {
+					box.style.display = 'none';
+					if (it.boundingbox) {
+						var bb = it.boundingbox.map(Number);
+						map.fitBounds([[bb[0], bb[2]], [bb[1], bb[3]]], { maxZoom: 18 });
+					} else {
+						map.setView([+it.lat, +it.lon], 17);
+					}
+				};
+				box.appendChild(d);
+			});
+			box.style.display = 'block';
+			setStatus('Pripravené.');
+		}).catch(function (e) { setStatus('Vyhľadávanie zlyhalo: ' + e, 'err'); });
+	}
+	$('btnFind').onclick = doSearch;
+	$('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') doSearch(); });
+	document.addEventListener('click', function (e) { if (!$('search').contains(e.target)) $('searchResults').style.display = 'none'; });
+
+	// =========================================================================
+	// Terrain
+	// =========================================================================
+	function reductionParams() {
+		var mode = document.querySelector('input[name=redMode]:checked').value;
+		return {
+			enabled: $('redOn').checked,
+			mode: Number(mode),
+			keepPercent: Number($('redKeep').value),
+			nearPercent: Number($('redNear').value),
+			farPercent: Number($('redFar').value)
+		};
+	}
+
+	function updateTerrainBox() {
+		$('terrainBox').style.display = terrain ? 'block' : 'none';
+		if (!terrain) return;
+		$('terrainBadge').textContent = fmt(terrain.count, 0) + ' bodov';
+		$('terrainInfo').textContent = 'krok ' + fmt(terrain.spacing, 2) + ' m · výšky ' + fmt(terrain.minZ, 2) + ' – ' + fmt(terrain.maxZ, 2) + ' m n. m.';
+		if (Number($('h0').value) === 0 && terrain.minZ) {
+			$('h0').value = (Math.round(terrain.minZ * 100) / 100).toFixed(2);
+		}
+		refreshReduceCount();
+	}
+
+	function updateRedUi() {
+		var p = reductionParams();
+		$('redBox').style.display = p.enabled ? 'block' : 'none';
+		$('redUniform').style.display = p.mode === 0 ? 'block' : 'none';
+		$('redDistance').style.display = p.mode === 1 ? 'block' : 'none';
+		$('redKeepVal').textContent = p.keepPercent + ' %';
+		$('redNearVal').textContent = p.nearPercent + ' %';
+		$('redFarVal').textContent = p.farPercent + ' %';
+	}
+
+	var refreshReduceCount = debounce(function () {
+		if (!terrain) return;
+		var o = effectiveOrigin();
+		request('reduceCount', { reduction: reductionParams(), origin: o }).then(function (r) {
+			$('redCount').textContent = r.ok ? fmt(r.kept, 0) + ' z ' + fmt(r.count, 0) : '–';
+		});
+	}, 250);
+
+	['redOn', 'redKeep', 'redNear', 'redFar'].forEach(function (id) {
+		$(id).addEventListener('input', function () { updateRedUi(); refreshReduceCount(); saveUiState(); });
+		$(id).addEventListener('change', function () { updateRedUi(); refreshReduceCount(); saveUiState(); });
+	});
+	[].forEach.call(document.querySelectorAll('input[name=redMode]'), function (el) {
+		el.addEventListener('change', function () { updateRedUi(); refreshReduceCount(); saveUiState(); });
+	});
+
+	function loadTerrain(source) {
+		if (!area) { setStatus('Najprv vyberte územie v mape.', 'err'); return; }
+		setStatus(source === 'file' ? 'Vyberte súbor terénu…' : 'Sťahujem terén DMR 5.0…');
+		request('loadTerrain', { area: area, source: source }).then(function (r) {
+			if (!r.ok) { setStatus(r.error, 'err'); return; }
+			terrain = r;
+			updateTerrainBox();
+			setStatus('Terén načítaný: ' + fmt(r.count, 0) + ' bodov.', 'ok');
+		});
+	}
+	$('btnLoadTerrain').onclick = function () { loadTerrain('service'); };
+	$('btnLoadTerrainFile').onclick = function () { loadTerrain('file'); };
+
+	$('btnExportXyz').onclick = function () {
+		request('exportXyz', {
+			area: area, origin: effectiveOrigin(), h0: Number($('h0').value) || 0,
+			reduction: reductionParams(), local: $('xyzLocal').checked, positiveYX: $('xyzPositive').checked
+		}).then(function (r) {
+			if (r.ok) setStatus('Uložené ' + fmt(r.points, 0) + ' bodov: ' + r.path, 'ok');
+			else setStatus(r.error, 'err');
+		});
+	};
+
+	// --- simple 3D preview (canvas, no external library) ---
+	var preview = { pts: null, yaw: -0.6, pitch: 0.9, zoom: 1, exag: 1.5 };
+	$('btnPreview3d').onclick = function () {
+		var cv = $('preview3d');
+		if (cv.style.display === 'block') { cv.style.display = 'none'; return; }
+		request('terrainPreview', { maxPoints: 12000 }).then(function (r) {
+			if (!r.ok) { setStatus(r.error || 'Náhľad nie je dostupný', 'err'); return; }
+			preview.pts = r.points;
+			cv.style.display = 'block';
+			render3d();
+		});
+	};
+	function render3d() {
+		var cv = $('preview3d');
+		var w = cv.clientWidth, h = cv.clientHeight;
+		cv.width = w * (window.devicePixelRatio || 1);
+		cv.height = h * (window.devicePixelRatio || 1);
+		var ctx = cv.getContext('2d');
+		ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+		ctx.clearRect(0, 0, w, h);
+		var pts = preview.pts;
+		if (!pts || !pts.length) return;
+		var minE = Infinity, maxE = -Infinity, minN = Infinity, maxN = -Infinity, minZ = Infinity, maxZ = -Infinity;
+		pts.forEach(function (p) { minE = Math.min(minE, p[0]); maxE = Math.max(maxE, p[0]); minN = Math.min(minN, p[1]); maxN = Math.max(maxN, p[1]); minZ = Math.min(minZ, p[2]); maxZ = Math.max(maxZ, p[2]); });
+		var cE = (minE + maxE) / 2, cN = (minN + maxN) / 2, cZ = (minZ + maxZ) / 2;
+		var size = Math.max(maxE - minE, maxN - minN) || 1;
+		var s = Math.min(w, h) / size * 0.8 * preview.zoom;
+		var cy = Math.cos(preview.yaw), sy = Math.sin(preview.yaw), cp = Math.cos(preview.pitch), sp = Math.sin(preview.pitch);
+		var proj = pts.map(function (p) {
+			var x = p[0] - cE, y = p[1] - cN, z = (p[2] - cZ) * preview.exag;
+			var rx = x * cy - y * sy, ry = x * sy + y * cy;
+			var depth = ry * cp + z * sp;
+			var sx = w / 2 + rx * s, sy2 = h / 2 - (z * cp - ry * sp) * s;
+			return [sx, sy2, depth, (p[2] - minZ) / ((maxZ - minZ) || 1)];
+		});
+		proj.sort(function (a, b) { return b[2] - a[2]; });
+		var r = Math.max(1.2, Math.min(3, s * Math.sqrt(size * size / pts.length) * 0.6));
+		proj.forEach(function (q) {
+			var t = q[3];
+			var cr = Math.round(60 + 150 * t), cg = Math.round(120 + 60 * (1 - Math.abs(t - .5) * 2)), cb = Math.round(70 + 40 * (1 - t));
+			ctx.fillStyle = 'rgb(' + cr + ',' + cg + ',' + cb + ')';
+			ctx.fillRect(q[0] - r / 2, q[1] - r / 2, r, r);
+		});
+		ctx.fillStyle = '#1f2421';
+		ctx.font = '11px Segoe UI, sans-serif';
+		ctx.fillText('Ťahaním otáčajte, koliesko = zoom · prevýšenie ×' + preview.exag, 8, h - 8);
+	}
+	(function () {
+		var cv = $('preview3d'), drag = null;
+		cv.addEventListener('mousedown', function (e) { drag = { x: e.clientX, y: e.clientY }; cv.style.cursor = 'grabbing'; });
+		window.addEventListener('mouseup', function () { drag = null; cv.style.cursor = 'grab'; });
+		window.addEventListener('mousemove', function (e) {
+			if (!drag) return;
+			preview.yaw += (e.clientX - drag.x) * 0.01;
+			preview.pitch = Math.max(0.1, Math.min(1.5, preview.pitch + (e.clientY - drag.y) * 0.01));
+			drag = { x: e.clientX, y: e.clientY };
+			render3d();
+		});
+		cv.addEventListener('wheel', function (e) { e.preventDefault(); preview.zoom *= e.deltaY < 0 ? 1.1 : 0.9; render3d(); });
+		cv.addEventListener('dblclick', function () { preview.exag = preview.exag >= 4 ? 1 : preview.exag + 0.5; render3d(); });
+	})();
+
+	// =========================================================================
+	// Place / export
+	// =========================================================================
+	function logResults(r) {
+		var ul = $('log');
+		ul.innerHTML = '';
+		var list = r.results || [];
+		if (!list.length && r.error) list = [{ item: 'Chyba', ok: false, message: r.error }];
+		list.forEach(function (it) {
+			var li = document.createElement('li');
+			li.innerHTML = '<b class="' + (it.ok ? 'ok' : 'err') + '">' + (it.ok ? '✔' : '✖') + ' ' + escapeHtml(it.item) + '</b> <span class="small">' + escapeHtml(it.message || '') + '</span>';
+			ul.appendChild(li);
+		});
+		if (!list.length) ul.innerHTML = '<li class="muted">Nič nebolo vybrané na vloženie.</li>';
+	}
+	function escapeHtml(s) { return String(s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+
+	$('btnPlace').onclick = function () {
+		if (!area) { setStatus('Najprv vyberte územie v mape.', 'err'); return; }
+		var items = { cadastreC: $('itCadC').checked, cadastreE: $('itCadE').checked, ortho: $('itOrtho').checked, terrain: $('itTerrain').checked, originMarker: $('itOrigin').checked };
+		if (!items.cadastreC && !items.cadastreE && !items.ortho && !items.terrain) { setStatus('Zaškrtnite aspoň jeden podklad.', 'err'); return; }
+		var b = bounds(area);
+		if ((b.maxE - b.minE) * (b.maxN - b.minN) > 25e6) {
+			setStatus('Územie je väčšie ako 25 km² – zmenšite výber.', 'err');
+			return;
+		}
+		$('btnPlace').disabled = true;
+		setStatus('Sťahujem a vkladám podklady…');
+		request('place', {
+			area: area,
+			origin: effectiveOrigin(),
+			h0: Number($('h0').value) || 0,
+			insertJtsk: $('insJtsk').checked,
+			insertLocal: $('insLocal').checked,
+			target: document.querySelector('input[name=target]:checked').value,
+			items: items,
+			orthoHQ: $('orthoHQ').checked,
+			reduction: reductionParams(),
+			settings: settings
+		}).then(function (r) {
+			$('btnPlace').disabled = false;
+			logResults(r);
+			var bad = (r.results || []).filter(function (x) { return !x.ok; }).length;
+			if (!r.ok) setStatus(r.error || 'Vkladanie zlyhalo', 'err');
+			else if (bad) setStatus('Hotovo s chybami (' + bad + ') – pozrite Výsledok.', 'err');
+			else setStatus('Hotovo – podklady sú vložené.', 'ok');
+			if (r.ok && items.terrain && !terrain) {
+				// the add-on loaded terrain implicitly
+				request('terrainInfo', {}).then(function (t) { if (t.ok && t.count) { terrain = t; updateTerrainBox(); } });
+			}
+		});
+	};
+
+	$('btnExportOrtho').onclick = function () {
+		if (!area) { setStatus('Najprv vyberte územie v mape.', 'err'); return; }
+		request('exportOrtho', { area: area, orthoHQ: $('orthoHQ').checked }).then(function (r) {
+			if (r.ok) setStatus('Ortofoto uložené: ' + r.path, 'ok');
+			else setStatus(r.error, 'err');
+		});
+	};
+
+	// =========================================================================
+	// Project location
+	// =========================================================================
+	$('btnOriginLoad').onclick = function () {
+		request('getPlace', {}).then(function (r) {
+			if (!r.ok) { setStatus(r.error, 'err'); return; }
+			if (!r.lat && !r.lon) { setStatus('Umiestnenie projektu nie je nastavené.', 'err'); return; }
+			var en = toJtsk(L.latLng(r.lat, r.lon));
+			setOrigin(en);
+			if (r.alt) $('h0').value = Number(r.alt).toFixed(2);
+			map.setView(toLatLng(en), Math.max(map.getZoom(), 17));
+			setStatus('Počiatok načítaný z umiestnenia projektu.', 'ok');
+		});
+	};
+	$('btnOriginSave').onclick = function () {
+		var o = effectiveOrigin();
+		if (!o) { setStatus('Najprv nastavte počiatok alebo vyberte územie.', 'err'); return; }
+		var ll = toLatLng(o);
+		request('setPlace', { lat: ll.lat, lon: ll.lng, alt: Number($('h0').value) || 0 }).then(function (r) {
+			if (r.ok) setStatus('Umiestnenie projektu aktualizované.', 'ok');
+			else setStatus(r.error, 'err');
+		});
+	};
+
+	// =========================================================================
+	// Settings dialog
+	// =========================================================================
+	function openSettings() {
+		var tb = $('layerRows');
+		tb.innerHTML = '';
+		Object.keys(layerLabels).forEach(function (k) {
+			var s = settings.layers[k] || {};
+			var tr = document.createElement('tr');
+			var hasPen = 'pen' in (defaultSettings.layers[k] || {});
+			var hasLt = 'lineType' in (defaultSettings.layers[k] || {});
+			tr.innerHTML = '<td>' + layerLabels[k] + '</td>' +
+				'<td><input type="text" data-k="' + k + '" data-f="layer" value="' + escapeHtml(s.layer || '') + '"></td>' +
+				'<td>' + (hasPen ? '<input type="number" min="1" max="255" data-k="' + k + '" data-f="pen" value="' + (s.pen || 1) + '">' : '') + '</td>' +
+				'<td>' + (hasLt ? '<input type="text" placeholder="plná" data-k="' + k + '" data-f="lineType" value="' + escapeHtml(s.lineType || '') + '">' : '') + '</td>';
+			tb.appendChild(tr);
+		});
+		$('setTextSize').value = settings.textSize;
+		$('setWorksheet').value = settings.worksheetName;
+		$('setExact').checked = settings.terrainExactOutline !== false;
+		$('servicesJson').value = services ? JSON.stringify(services, null, 2) : '';
+		$('testResults').innerHTML = '';
+		$('settingsModal').classList.add('open');
+	}
+	function closeSettings() { $('settingsModal').classList.remove('open'); }
+	$('btnSettings').onclick = openSettings;
+	$('btnCancelSettings').onclick = closeSettings;
+	$('btnResetSettings').onclick = function () {
+		var ui = settings.ui;
+		settings = JSON.parse(JSON.stringify(defaultSettings));
+		settings.ui = ui;
+		openSettings();
+	};
+	$('btnSaveSettings').onclick = function () {
+		[].forEach.call(document.querySelectorAll('#layerRows input'), function (inp) {
+			var k = inp.getAttribute('data-k'), f = inp.getAttribute('data-f');
+			settings.layers[k] = settings.layers[k] || {};
+			settings.layers[k][f] = f === 'pen' ? Number(inp.value) || 1 : inp.value.trim();
+		});
+		settings.textSize = Number($('setTextSize').value) || 2;
+		settings.worksheetName = $('setWorksheet').value.trim() || 'Mapové podklady';
+		settings.terrainExactOutline = $('setExact').checked;
+		persistSettings();
+		closeSettings();
+		setStatus('Nastavenie uložené.', 'ok');
+	};
+	[].forEach.call(document.querySelectorAll('.tabs button'), function (b) {
+		b.onclick = function () {
+			[].forEach.call(document.querySelectorAll('.tabs button'), function (x) { x.classList.remove('active'); $(x.getAttribute('data-tab')).style.display = 'none'; });
+			b.classList.add('active');
+			$(b.getAttribute('data-tab')).style.display = 'block';
+		};
+	});
+	$('btnSaveServices').onclick = function () {
+		var obj;
+		try { obj = JSON.parse($('servicesJson').value); } catch (e) { setStatus('Chyba v JSON: ' + e.message, 'err'); return; }
+		request('saveServices', { services: obj }).then(function (r) {
+			if (r.ok) { services = r.services; setStatus('Služby uložené.', 'ok'); }
+			else setStatus(r.error, 'err');
+		});
+	};
+	$('btnResetServices').onclick = function () {
+		request('saveServices', { reset: true }).then(function (r) {
+			if (r.ok) { services = r.services; $('servicesJson').value = JSON.stringify(services, null, 2); setStatus('Obnovené predvolené služby.', 'ok'); }
+		});
+	};
+	$('btnTestServices').onclick = function () {
+		$('testResults').innerHTML = '<div class="muted">Testujem…</div>';
+		request('testServices', {}).then(function (r) {
+			var box = $('testResults');
+			box.innerHTML = '';
+			(r.results || []).forEach(function (t) {
+				var d = document.createElement('div');
+				d.className = 'test-item';
+				d.innerHTML = '<b class="' + (t.ok ? 'ok' : 'err') + '">' + (t.ok ? '✔' : '✖') + ' ' + escapeHtml(t.title) + '</b><br><span class="small muted">' + escapeHtml(t.info || '') + '</span>' +
+					(t.names && t.names.length ? '<br><span class="small">Názvy: ' + escapeHtml(t.names.join(', ')) + '</span>' : '');
+				box.appendChild(d);
+			});
+			if (!r.ok) box.innerHTML = '<div class="test-item"><b class="err">' + escapeHtml(r.error || 'Test zlyhal') + '</b></div>';
+		});
+	};
+
+	// =========================================================================
+	// Persistence of settings and UI state
+	// =========================================================================
+	function collectUi() {
+		return {
+			itCadC: $('itCadC').checked, itCadE: $('itCadE').checked, itOrtho: $('itOrtho').checked, orthoHQ: $('orthoHQ').checked,
+			itTerrain: $('itTerrain').checked, itOrigin: $('itOrigin').checked,
+			insJtsk: $('insJtsk').checked, insLocal: $('insLocal').checked,
+			target: document.querySelector('input[name=target]:checked').value,
+			red: reductionParams(), h0: $('h0').value,
+			area: area, origin: origin,
+			view: { c: map.getCenter(), z: map.getZoom() }
+		};
+	}
+	function applyUi(u) {
+		if (!u) return;
+		['itCadC', 'itCadE', 'itOrtho', 'orthoHQ', 'itTerrain', 'itOrigin', 'insJtsk', 'insLocal'].forEach(function (k) { if (k in u) $(k).checked = !!u[k]; });
+		if (u.target) { var t = document.querySelector('input[name=target][value=' + u.target + ']'); if (t) t.checked = true; }
+		if (u.red) {
+			$('redOn').checked = u.red.enabled !== false;
+			var m = document.querySelector('input[name=redMode][value="' + (u.red.mode || 0) + '"]'); if (m) m.checked = true;
+			if (u.red.keepPercent) $('redKeep').value = u.red.keepPercent;
+			if (u.red.nearPercent) $('redNear').value = u.red.nearPercent;
+			if (u.red.farPercent) $('redFar').value = u.red.farPercent;
+		}
+		if (u.h0) $('h0').value = u.h0;
+		if (u.view && u.view.c) map.setView([u.view.c.lat, u.view.c.lng], u.view.z || 15);
+		if (u.area && u.area.length > 3) { area = u.area; drawArea(); }
+		if (u.origin) setOrigin(u.origin);
+		updateRedUi();
+	}
+	function persistSettings() {
+		settings.ui = collectUi();
+		request('saveSettings', { settings: settings });
+	}
+	var saveUiState = debounce(persistSettings, 800);
+	map.on('moveend', saveUiState);
+	[].forEach.call(document.querySelectorAll('#panel input'), function (el) { el.addEventListener('change', saveUiState); });
+
+	// =========================================================================
+	// Init
+	// =========================================================================
+	updateRedUi();
+	drawArea();
+	if (!hasBridge) {
+		setStatus('Náhľad mimo Archicadu – vkladanie nie je dostupné.', 'err');
+	}
+	request('init', {}).then(function (r) {
+		if (!r.ok) return;
+		$('ver').textContent = 'v' + r.version + ' · AC23';
+		services = r.services;
+		if (r.settings) {
+			var s = r.settings;
+			settings.layers = Object.assign({}, defaultSettings.layers, s.layers || {});
+			if (s.textSize) settings.textSize = s.textSize;
+			if (s.worksheetName) settings.worksheetName = s.worksheetName;
+			if ('terrainExactOutline' in s) settings.terrainExactOutline = s.terrainExactOutline;
+			applyUi(s.ui);
+		}
+		if (r.place && r.place.alt && !(r.settings && r.settings.ui && r.settings.ui.h0))
+			$('h0').value = Number(r.place.alt).toFixed(2);
+		setStatus('Pripravené.');
+	});
+})();
+</script>
+</body>
+</html>

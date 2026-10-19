@@ -1,0 +1,6 @@
+/* Windows resources - Pilon Map Downloader */
+
+#include "PilonMapDownloader.grc.rc2"
+#include "PilonMapDownloaderFix.grc.rc2"
+
+1	ICON    LOADONCALL MOVEABLE IMPURE  ACAP.ico

@@ -1,0 +1,82 @@
+name: Build Archicad 23 add-on
+
+on:
+  push:
+    branches: [ main ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  DEVKIT_VERSION: "23.3006"
+  DEVKIT_URL: "https://github.com/GRAPHISOFT/archicad-api-devkit/releases/download/23.3006/API.Development.Kit.WIN.23.3006.zip"
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache API DevKit 23
+        id: cache-devkit
+        uses: actions/cache@v4
+        with:
+          path: devkit
+          key: devkit-win-${{ env.DEVKIT_VERSION }}
+
+      - name: Download API DevKit 23 (Graphisoft)
+        if: steps.cache-devkit.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force devkit | Out-Null
+          Invoke-WebRequest -Uri $env:DEVKIT_URL -OutFile devkit\devkit.zip
+          Expand-Archive devkit\devkit.zip -DestinationPath devkit -Force
+          Remove-Item devkit\devkit.zip
+          Get-ChildItem devkit
+
+      - name: Ensure MSVC v141 toolset (Visual Studio 2017) is installed
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath
+          Write-Host "Visual Studio: $vs"
+          $v141 = Join-Path $vs "MSBuild\Microsoft\VC\v170\Platforms\x64\PlatformToolsets\v141"
+          if (Test-Path $v141) {
+            Write-Host "v141 toolset present"
+          } else {
+            Write-Host "Installing v141 toolset..."
+            $installer = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vs_installer.exe"
+            $p = Start-Process -FilePath $installer -ArgumentList @('modify', '--installPath', "`"$vs`"", '--add', 'Microsoft.VisualStudio.Component.VC.v141.x86.x64', '--quiet', '--norestart', '--nocache') -Wait -PassThru
+            Write-Host "Installer exit code: $($p.ExitCode)"
+            if (-not (Test-Path $v141)) { throw "v141 toolset installation failed" }
+          }
+
+      - name: Embed web UI
+        run: python tools/embed_html.py
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build
+        run: msbuild addon\PilonMapDownloader.vcxproj /m /p:Configuration=Release /p:Platform=x64 /v:minimal
+
+      - name: Collect output
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item addon\Build\x64\Release\PilonMapDownloader.apx dist\
+          Copy-Item README.md dist\
+          Get-ChildItem dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PilonMapDownloader-AC23-win64
+          path: dist/
+
+      - name: Release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/PilonMapDownloader.apx

@@ -1,0 +1,8 @@
+/* Non-localizable resources - Pilon Map Downloader (Archicad 23) */
+
+#include "ResourceIds.hpp"
+
+'MDID' 32500 "Add-On Identifier" {
+	PILON_DEVELOPER_ID
+	PILON_LOCAL_ID
+}
