@@ -20,6 +20,23 @@ Súradnice: S-JTSK / Křovák East North (EPSG:5514), prepočet WGS84 ↔ S-JTSK
 
 Nastavenia a log: `%APPDATA%\PilonMapDownloader\` (`settings.json`, `services.json`, `log.txt`).
 
+## Postup testovania (prvé spustenie)
+
+1. Zatvorte Archicad 23, skopírujte `PilonMapDownloader.apx` do `Add-Ons`, spustite Archicad.
+   Ak sa v menu neobjaví **Pilon › Map Downloader**, pozrite *Možnosti › Správca doplnkov* (chybové hlásenie pri načítaní).
+2. Otvorte paletu – v hornej časti sa má zobraziť mapa (OSM + kataster). Stav dole má ukázať verziu `v0.1.x · AC23`.
+3. **⚙ Nastavenie › Služby › Test služieb** – každá služba má mať ✔. Pri ✖ sa vypíšu názvy vrstiev / typov prvkov
+   zo servera; podľa nich opravte `layers`, `typeName` alebo `coverageId` v JSON a **Uložiť služby**.
+4. Vyhľadajte obec (napr. *Trnava*), nakreslite **▭ Obdĺžnik** (cca 200 × 200 m).
+5. Zaškrtnite *Kataster C* a *Ortofoto*, **Vložiť do Archicadu** → v pôdoryse by sa mali objaviť čiary parciel,
+   čísla a ortofoto na správnom mieste (v lokálnom počiatku okolo bodu 0,0).
+6. Terén: **Načítať terén zo služby** – ak služba DMR nie je dostupná, stiahnite výrez DMR 5.0 z
+   [MAPKA](https://zbgis.skgeodesy.sk/mapka/) (GeoTIFF / XYZ) a použite **Zo súboru…**; potom nastavte redukciu bodov,
+   **Náhľad 3D** a **Vložiť do Archicadu** (mesh na vrstve TEREN_DMR5).
+7. **▣ Pozemok**: polygón okolo parciel → zoznam parciel, **Report o pozemku…** (TXT + XML), vloženie hranice KN_POZEMOK.
+
+Pri probléme pošlite súbor `%APPDATA%\PilonMapDownloader\log.txt` – obsahuje všetky volané URL a odpovede služieb.
+
 ## Služby
 
 Predvolené adresy služieb sú v `addon/Src/Commands.cpp` (`kDefaultServices`) a dajú sa prepísať v palete

@@ -1,6 +1,7 @@
 ﻿#include "MapPalette.hpp"
 
 #include "Commands.hpp"
+#include "MDCLParams.hpp"
 #include "Json.hpp"
 #include "ResourceIds.hpp"
 #include "Util.hpp"
@@ -117,7 +118,11 @@ void MapPalette::RegisterACAPIJavaScriptObject ()
 			gQueue.push_back (json);
 		}
 		static const API_ModulID mdid = { PILON_DEVELOPER_ID, PILON_LOCAL_ID };
-		ACAPI_Command_CallFromEventLoop (&mdid, MapPalette::CommandId, 1L, nullptr, true, nullptr);
+		GSAPI::MDCLParams params (false);
+		params.SetInt ("pending", 1);
+		GSErrCode err = ACAPI_Command_CallFromEventLoop (&mdid, MapPalette::CommandId, 1L, params.GetParams (), true, nullptr);
+		if (err != NoError)
+			Util::Log ("CallFromEventLoop failed: " + std::to_string ((int) err));
 		return new DG::JSValue (true);
 	}));
 
@@ -187,6 +192,7 @@ GSErrCode __ACENV_CALL MapPalette::RequestCommandHandler (GSHandle, GSPtr, bool)
 			gQueue.pop_front ();
 		}
 
+		DWORD t0 = GetTickCount ();
 		JsonValue request;
 		std::string parseError;
 		JsonValue response;
@@ -202,6 +208,8 @@ GSErrCode __ACENV_CALL MapPalette::RequestCommandHandler (GSHandle, GSPtr, bool)
 		}
 		response.Set ("id", request["id"]);
 		response.Set ("cmd", request["cmd"]);
+		Util::Log ("done " + request["cmd"].AsString () + " in " + std::to_string ((unsigned long) (GetTickCount () - t0)) + " ms, ok=" + (response["ok"].AsBool () ? "1" : "0") +
+				   (response["error"].IsString () ? " error=" + response["error"].AsString () : std::string ()));
 		if (MapPalette::HasInstance ())
 			MapPalette::GetInstance ().SendResponse (response.Serialize ());
 	}
