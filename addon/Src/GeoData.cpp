@@ -1,4 +1,4 @@
-#include "GeoData.hpp"
+﻿#include "GeoData.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -554,7 +554,7 @@ bool ParseGmlFeatures (const std::string& gml, const std::string& labelTags, std
 		size_t look = gml.find ("numberReturned=\"0\"");
 		if (look != std::string::npos || gml.find ("FeatureCollection") != std::string::npos)
 			return true;	// empty collection
-		error = "Odpoveď neobsahuje GML prvky: " + gml.substr (0, 200);
+		error = u8"Odpoveď neobsahuje GML prvky: " + gml.substr (0, 200);
 		return false;
 	}
 	return true;
@@ -737,7 +737,7 @@ bool ParseGeoTiff (const std::string& data, const BBox& fallbackBox, Terrain& ou
 {
 	TiffReader r (data);
 	if (data.size () < 8) {
-		error = "TIFF je príliš krátky";
+		error = u8"TIFF je príliš krátky";
 		return false;
 	}
 	if (data[0] == 'I' && data[1] == 'I')
@@ -745,16 +745,16 @@ bool ParseGeoTiff (const std::string& data, const BBox& fallbackBox, Terrain& ou
 	else if (data[0] == 'M' && data[1] == 'M')
 		r.le = false;
 	else {
-		error = "Nie je to TIFF súbor";
+		error = u8"Nie je to TIFF súbor";
 		return false;
 	}
 	if (r.U16 (2) != 42) {
-		error = "Nepodporovaný TIFF (BigTIFF?)";
+		error = u8"Nepodporovaný TIFF (BigTIFF?)";
 		return false;
 	}
 	size_t ifd = r.U32 (4);
 	if (!r.Ok (ifd, 2)) {
-		error = "Poškodený TIFF";
+		error = u8"Poškodený TIFF";
 		return false;
 	}
 	unsigned nTags = r.U16 (ifd);
@@ -793,16 +793,16 @@ bool ParseGeoTiff (const std::string& data, const BBox& fallbackBox, Terrain& ou
 		return false;
 	}
 	if (compression != 1) {
-		error = "Komprimovaný TIFF (kompresia " + std::to_string (compression) + ") nie je podporovaný – nastavte v službe nekomprimovaný výstup alebo formát ArcGrid";
+		error = u8"Komprimovaný TIFF (kompresia " + std::to_string (compression) + u8") nie je podporovaný – nastavte v službe nekomprimovaný výstup alebo formát ArcGrid";
 		return false;
 	}
 	if (spp != 1 && planar != 1) {
-		error = "Viacpásmový TIFF nie je podporovaný";
+		error = u8"Viacpásmový TIFF nie je podporovaný";
 		return false;
 	}
 	int bytesPerSample = bits / 8;
 	if (bytesPerSample != 1 && bytesPerSample != 2 && bytesPerSample != 4 && bytesPerSample != 8) {
-		error = "Nepodporovaná bitová hĺbka TIFF";
+		error = u8"Nepodporovaná bitová hĺbka TIFF";
 		return false;
 	}
 	size_t pixelStride = (size_t) bytesPerSample * (size_t) spp;
@@ -845,7 +845,7 @@ bool ParseGeoTiff (const std::string& data, const BBox& fallbackBox, Terrain& ou
 		}
 	}
 	if (!geo && !fallbackBox.IsValid ()) {
-		error = "TIFF nemá georeferenciu";
+		error = u8"TIFF nemá georeferenciu";
 		return false;
 	}
 
@@ -882,7 +882,7 @@ bool ParseGeoTiff (const std::string& data, const BBox& fallbackBox, Terrain& ou
 		// tiled
 		int tw = (int) get1 (322, 0), th = (int) get1 (323, 0);
 		if (tw <= 0 || th <= 0) {
-			error = "TIFF dlaždice bez rozmerov";
+			error = u8"TIFF dlaždice bez rozmerov";
 			return false;
 		}
 		std::vector<double> offs = TagValues (r, tags[324]);
@@ -916,7 +916,7 @@ bool ParseGeoTiff (const std::string& data, const BBox& fallbackBox, Terrain& ou
 		if (rowsPerStrip <= 0)
 			rowsPerStrip = height;
 		if (offs.empty ()) {
-			error = "TIFF bez dát";
+			error = u8"TIFF bez dát";
 			return false;
 		}
 		for (int row = 0; row < height; row++) {
@@ -940,7 +940,7 @@ bool ParseGeoTiff (const std::string& data, const BBox& fallbackBox, Terrain& ou
 	out.regularGrid = true;
 	out.spacing = std::sqrt (px * py);
 	if (out.points.empty ()) {
-		error = "Raster neobsahuje platné výšky (iba NoData)";
+		error = u8"Raster neobsahuje platné výšky (iba NoData)";
 		return false;
 	}
 	return true;
@@ -986,7 +986,7 @@ bool ParseArcGrid (const std::string& text, Terrain& out, std::string& error)
 	if (dy <= 0)
 		dy = cell;
 	if (ncols <= 0 || nrows <= 0 || dx <= 0 || dy <= 0) {
-		error = "Neplatná hlavička ASCII gridu";
+		error = u8"Neplatná hlavička ASCII gridu";
 		return false;
 	}
 	double x0 = xCenter ? xll : xll + dx * 0.5;			// center of first column
@@ -1001,7 +1001,7 @@ bool ParseArcGrid (const std::string& text, Terrain& out, std::string& error)
 			char* next = nullptr;
 			double z = strtod (p, &next);
 			if (next == p) {
-				error = "ASCII grid má menej hodnôt, než udáva hlavička";
+				error = u8"ASCII grid má menej hodnôt, než udáva hlavička";
 				return false;
 			}
 			p = next;
@@ -1064,7 +1064,7 @@ bool ParseXyz (const std::string& text, Terrain& out, std::string& error)
 		p = lineEnd + 1;
 	}
 	if (out.points.empty ()) {
-		error = "Súbor neobsahuje body X Y Z";
+		error = u8"Súbor neobsahuje body X Y Z";
 		return false;
 	}
 	// regular grid detection: all coordinates multiples of a common step
@@ -1103,7 +1103,7 @@ bool ParseTerrainAuto (const std::string& data, const BBox& fallbackBox, Terrain
 		if (head == "ncols" || head == "nrows")
 			return ParseArcGrid (data, out, error);
 		if (head[0] == '<') {
-			error = "Služba vrátila XML namiesto výškových dát: " + data.substr (firstNonWs, 300);
+			error = u8"Služba vrátila XML namiesto výškových dát: " + data.substr (firstNonWs, 300);
 			return false;
 		}
 	}

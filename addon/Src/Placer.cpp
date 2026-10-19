@@ -1,6 +1,7 @@
-#include "Placer.hpp"
+﻿#include "Placer.hpp"
 #include "Util.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 
@@ -154,7 +155,7 @@ void PlaceRings (const std::vector<Geo::Ring>& rings, const LineStyle& style, co
 		element.header.typeID = API_PolyLineID;
 		GSErrCode err = ACAPI_Element_GetDefaults (&element, nullptr);
 		if (err != NoError) {
-			NoteError (stats, "Predvolené nastavenie čiary", err);
+			NoteError (stats, u8"Predvolené nastavenie čiary", err);
 			return;
 		}
 
@@ -172,7 +173,7 @@ void PlaceRings (const std::vector<Geo::Ring>& rings, const LineStyle& style, co
 		memo.pends = reinterpret_cast<Int32**> (BMAllocateHandle (2 * sizeof (Int32), ALLOCATE_CLEAR, 0));
 		if (memo.coords == nullptr || memo.pends == nullptr) {
 			ACAPI_DisposeElemMemoHdls (&memo);
-			NoteError (stats, "Nedostatok pamäte", APIERR_MEMFULL);
+			NoteError (stats, u8"Nedostatok pamäte", APIERR_MEMFULL);
 			return;
 		}
 		(*memo.coords)[0].x = -1.0;
@@ -186,7 +187,7 @@ void PlaceRings (const std::vector<Geo::Ring>& rings, const LineStyle& style, co
 		err = ACAPI_Element_Create (&element, &memo);
 		ACAPI_DisposeElemMemoHdls (&memo);
 		if (err != NoError)
-			NoteError (stats, "Vytvorenie čiary", err);
+			NoteError (stats, u8"Vytvorenie čiary", err);
 		else
 			stats.lines++;
 	}
@@ -203,7 +204,7 @@ void PlaceText (const std::string& text, const Geo::PointEN& pos, const std::str
 	element.header.typeID = API_TextID;
 	GSErrCode err = ACAPI_Element_GetDefaults (&element, nullptr);
 	if (err != NoError) {
-		NoteError (stats, "Predvolené nastavenie textu", err);
+		NoteError (stats, u8"Predvolené nastavenie textu", err);
 		return;
 	}
 	element.header.layer = EnsureLayer (layer);
@@ -221,7 +222,7 @@ void PlaceText (const std::string& text, const Geo::PointEN& pos, const std::str
 	BNZeroMemory (&memo, sizeof (memo));
 	memo.textContent = BMAllocateHandle ((GSSize) text.size () + 1, ALLOCATE_CLEAR, 0);
 	if (memo.textContent == nullptr) {
-		NoteError (stats, "Nedostatok pamäte", APIERR_MEMFULL);
+		NoteError (stats, u8"Nedostatok pamäte", APIERR_MEMFULL);
 		return;
 	}
 	memcpy (*memo.textContent, text.c_str (), text.size () + 1);
@@ -246,7 +247,7 @@ bool PlacePicture (const std::string& imageBytes, int widthPx, int heightPx, con
 	element.header.typeID = API_PictureID;
 	GSErrCode err = ACAPI_Element_GetDefaults (&element, nullptr);
 	if (err != NoError) {
-		NoteError (stats, "Predvolené nastavenie obrázka", err);
+		NoteError (stats, u8"Predvolené nastavenie obrázka", err);
 		return false;
 	}
 
@@ -277,7 +278,7 @@ bool PlacePicture (const std::string& imageBytes, int widthPx, int heightPx, con
 	BNZeroMemory (&memo, sizeof (memo));
 	memo.pictHdl = BMAllocateHandle ((GSSize) imageBytes.size (), ALLOCATE_CLEAR, 0);
 	if (memo.pictHdl == nullptr) {
-		NoteError (stats, "Nedostatok pamäte pre obrázok", APIERR_MEMFULL);
+		NoteError (stats, u8"Nedostatok pamäte pre obrázok", APIERR_MEMFULL);
 		return false;
 	}
 	memcpy (*memo.pictHdl, imageBytes.data (), imageBytes.size ());
@@ -285,7 +286,7 @@ bool PlacePicture (const std::string& imageBytes, int widthPx, int heightPx, con
 	err = ACAPI_Element_Create (&element, &memo);
 	ACAPI_DisposeElemMemoHdls (&memo);
 	if (err != NoError) {
-		NoteError (stats, "Vloženie ortofota", err);
+		NoteError (stats, u8"Vloženie ortofota", err);
 		return false;
 	}
 	stats.pictures++;
@@ -358,7 +359,7 @@ bool PlaceMesh (const std::vector<Geo::PointENZ>& boundary, const std::vector<Ge
 				const std::string& layer, const Offset& off, Stats& stats)
 {
 	if (boundary.size () < 4) {
-		NoteError (stats, "Obrys terénu má príliš málo bodov", APIERR_BADPARS);
+		NoteError (stats, u8"Obrys terénu má príliš málo bodov", APIERR_BADPARS);
 		return false;
 	}
 	API_AttributeIndex layerIdx = EnsureLayer (layer);
@@ -376,7 +377,7 @@ bool PlaceMesh (const std::vector<Geo::PointENZ>& boundary, const std::vector<Ge
 			GSErrCode err2 = CreateMeshOnce (boundary, std::vector<Geo::PointENZ> (), layerIdx, off);
 			if (err2 == NoError) {
 				stats.meshes++;
-				NoteError (stats, "Mesh vložený bez vnútorných bodov", err);
+				NoteError (stats, u8"Mesh vložený bez vnútorných bodov", err);
 				return true;
 			}
 		}

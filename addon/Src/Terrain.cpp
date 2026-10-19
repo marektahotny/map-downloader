@@ -1,4 +1,4 @@
-#include "Terrain.hpp"
+﻿#include "Terrain.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -58,7 +58,7 @@ bool Build (const Input& in, Output& out)
 {
 	out = Output ();
 	if (in.terrain == nullptr || in.terrain->points.empty ()) {
-		out.error = "Terén nie je načítaný";
+		out.error = u8"Terén nie je načítaný";
 		return false;
 	}
 	const Geo::Terrain& t = *in.terrain;
@@ -73,7 +73,7 @@ bool Build (const Input& in, Output& out)
 		outline = ConvexHull (t.points);
 	RemoveDuplicateVertices (outline);
 	if (outline.size () < 4) {
-		out.error = "Neplatný obrys terénu";
+		out.error = u8"Neplatný obrys terénu";
 		return false;
 	}
 	// boundary orientation: counter-clockwise

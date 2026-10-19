@@ -1,4 +1,4 @@
-#include "MapPalette.hpp"
+﻿#include "MapPalette.hpp"
 
 #include "Commands.hpp"
 #include "Json.hpp"
@@ -193,7 +193,7 @@ GSErrCode __ACENV_CALL MapPalette::RequestCommandHandler (GSHandle, GSPtr, bool)
 		if (!JsonValue::Parse (json, request, &parseError) || !request.IsObject ()) {
 			response = JsonValue::MakeObject ();
 			response.Set ("ok", false);
-			response.Set ("error", "Neplatná požiadavka: " + parseError);
+			response.Set ("error", u8"Neplatná požiadavka: " + parseError);
 		} else {
 			response = Commands::Execute (request, [] (const std::string& msg) {
 				if (MapPalette::HasInstance ())

@@ -1,4 +1,4 @@
-#include "Commands.hpp"
+﻿#include "Commands.hpp"
 
 #include "APIEnvir.h"
 #include "ACAPinc.h"
@@ -20,9 +20,9 @@ namespace Commands {
 // Service configuration
 // =============================================================================
 
-static const char* kDefaultServices = R"JSON({
+static const char* kDefaultServices = u8R"JSON({
  "ortho": {
-   "title": "Ortofotomozaika ZBGIS (ÚGKK SR)",
+   "title": u8"Ortofotomozaika ZBGIS (ÚGKK SR)",
    "type": "wms",
    "url": "https://zbgisws.skgeodesy.sk/zbgis_ortofoto_wms/service.svc/get",
    "layers": "1",
@@ -35,7 +35,7 @@ static const char* kDefaultServices = R"JSON({
    "tilePx": 2000
  },
  "cadastreC": {
-   "title": "Kataster – parcely registra C (INSPIRE WFS)",
+   "title": u8"Kataster – parcely registra C (INSPIRE WFS)",
    "type": "wfs",
    "url": "https://inspirews.skgeodesy.sk/geoserver/cp/ows",
    "typeName": "cp:CadastralParcel",
@@ -44,7 +44,7 @@ static const char* kDefaultServices = R"JSON({
    "count": 20000
  },
  "cadastreE": {
-   "title": "Kataster – parcely registra E (INSPIRE WFS)",
+   "title": u8"Kataster – parcely registra E (INSPIRE WFS)",
    "type": "wfs",
    "url": "https://inspirews.skgeodesy.sk/geoserver/cp_uo/ows",
    "typeName": "cp_uo:CadastralParcel",
@@ -53,7 +53,7 @@ static const char* kDefaultServices = R"JSON({
    "count": 20000
  },
  "terrain": {
-   "title": "Terén DMR 5.0 (ÚGKK SR)",
+   "title": u8"Terén DMR 5.0 (ÚGKK SR)",
    "type": "wcs",
    "url": "https://inspirews.skgeodesy.sk/geoserver/el/ows",
    "coverageId": "el__DMR5",
@@ -282,23 +282,23 @@ static bool DownloadTerrain (const JsonValue& svc, const Geo::BBox& bbox, Geo::T
 		url = Util::ReplaceAll (url, "{w}", std::to_string (w));
 		url = Util::ReplaceAll (url, "{h}", std::to_string (h));
 	} else {
-		error = "Služba terénu nie je nastavená (typ '" + type + "'). Použite import súboru XYZ / ASC / TIFF.";
+		error = u8"Služba terénu nie je nastavená (typ '" + type + u8"'). Použite import súboru XYZ / ASC / TIFF.";
 		return false;
 	}
 	Util::Log ("Terrain: " + url);
 	Http::Response r = Http::Get (url, 300);
 	if (!r.ok) {
-		error = "Terén: " + Http::Describe (r);
+		error = u8"Terén: " + Http::Describe (r);
 		std::string ex = Geo::ExtractOgcException (r.body);
 		if (!ex.empty ())
-			error = "Terén: " + ex;
+			error = u8"Terén: " + ex;
 		return false;
 	}
 	if (!Geo::ParseTerrainAuto (r.body, bbox, out, error)) {
-		error = "Terén: " + error;
+		error = u8"Terén: " + error;
 		return false;
 	}
-	out.source = svc["title"].AsString ("služba");
+	out.source = svc["title"].AsString (u8"služba");
 	return true;
 }
 
@@ -336,7 +336,7 @@ static JsonValue CmdInit ()
 static JsonValue CmdSaveSettings (const JsonValue& req)
 {
 	if (!Util::WriteFile (SettingsPath (), req["settings"].Serialize ()))
-		return Error ("Nastavenia sa nepodarilo uložiť");
+		return Error (u8"Nastavenia sa nepodarilo uložiť");
 	JsonValue r = JsonValue::MakeObject ();
 	r.Set ("ok", true);
 	return r;
@@ -350,9 +350,9 @@ static JsonValue CmdSaveServices (const JsonValue& req)
 		DeleteFileW ((LPCWSTR) ServicesPath ().c_str ());
 	} else {
 		if (!s.IsObject ())
-			return Error ("Neplatná konfigurácia služieb");
+			return Error (u8"Neplatná konfigurácia služieb");
 		if (!Util::WriteFile (ServicesPath (), s.Serialize ()))
-			return Error ("Konfiguráciu služieb sa nepodarilo uložiť");
+			return Error (u8"Konfiguráciu služieb sa nepodarilo uložiť");
 	}
 	JsonValue r = JsonValue::MakeObject ();
 	r.Set ("ok", true);
@@ -389,7 +389,7 @@ static JsonValue CmdTestServices (const ProgressFn& progress)
 		}
 		if (base.empty ()) {
 			item.Set ("ok", false);
-			item.Set ("info", "adresa nie je nastavená");
+			item.Set ("info", u8"adresa nie je nastavená");
 			list.Push (item);
 			continue;
 		}
@@ -436,7 +436,7 @@ static JsonValue CmdLoadTerrain (const JsonValue& req, const ProgressFn& progres
 {
 	Geo::Ring area = ReadRing (req["area"]);
 	if (area.size () < 4)
-		return Error ("Najprv vyberte územie");
+		return Error (u8"Najprv vyberte územie");
 	Geo::BBox box = Geo::BoundsOf (area);
 
 	Geo::Terrain t;
@@ -446,18 +446,18 @@ static JsonValue CmdLoadTerrain (const JsonValue& req, const ProgressFn& progres
 		std::wstring path = Util::OpenFileDialog (std::wstring ((const wchar_t*) L"Vyberte súbor terénu (XYZ, ASC, TIFF)"),
 												   std::wstring ((const wchar_t*) L"Terén (*.xyz;*.txt;*.asc;*.tif;*.tiff;*.csv)|*.xyz;*.txt;*.asc;*.tif;*.tiff;*.csv|Všetky súbory|*.*"));
 		if (path.empty ())
-			return Error ("Zrušené");
+			return Error (u8"Zrušené");
 		if (progress)
-			progress ("Načítavam súbor terénu…");
+			progress (u8"Načítavam súbor terénu…");
 		std::string data;
 		if (!Util::ReadFile (path, data))
-			return Error ("Súbor sa nepodarilo prečítať");
+			return Error (u8"Súbor sa nepodarilo prečítať");
 		if (!Geo::ParseTerrainAuto (data, Geo::BBox (), t, error))
 			return Error (error);
 		t.source = Util::WideToUtf8 (path);
 	} else {
 		if (progress)
-			progress ("Sťahujem terén DMR 5.0…");
+			progress (u8"Sťahujem terén DMR 5.0…");
 		JsonValue services = LoadServices ();
 		if (!DownloadTerrain (services["terrain"], Expand (box, 3.0), t, error))
 			return Error (error);
@@ -470,7 +470,7 @@ static JsonValue CmdLoadTerrain (const JsonValue& req, const ProgressFn& progres
 	t.regularGrid = reg;
 	t.spacing = sp;
 	if (t.points.empty ())
-		return Error ("V zvolenom území nie sú žiadne body terénu (" + std::to_string (before) + " bodov mimo výberu)");
+		return Error (u8"V zvolenom území nie sú žiadne body terénu (" + std::to_string (before) + u8" bodov mimo výberu)");
 
 	gTerrain = t;
 	gTerrainLoaded = true;
@@ -481,7 +481,7 @@ static JsonValue CmdLoadTerrain (const JsonValue& req, const ProgressFn& progres
 static JsonValue CmdTerrainPreview (const JsonValue& req)
 {
 	if (!gTerrainLoaded)
-		return Error ("Najprv načítajte terén");
+		return Error (u8"Najprv načítajte terén");
 	size_t maxPts = (size_t) std::max (100.0, req["maxPoints"].AsNumber (12000));
 	size_t step = std::max ((size_t) 1, (size_t) std::ceil (std::sqrt ((double) gTerrain.points.size () / (double) maxPts)));
 	JsonValue pts = JsonValue::MakeArray ();
@@ -508,7 +508,7 @@ static JsonValue CmdTerrainPreview (const JsonValue& req)
 static JsonValue CmdReduceCount (const JsonValue& req)
 {
 	if (!gTerrainLoaded)
-		return Error ("Terén nie je načítaný");
+		return Error (u8"Terén nie je načítaný");
 	Geo::PointEN origin (req["origin"]["e"].AsNumber (), req["origin"]["n"].AsNumber ());
 	Geo::ReductionParams p = ReadReduction (req["reduction"], origin);
 	std::vector<size_t> keep = Geo::ReducePoints (gTerrain, p);
@@ -544,7 +544,7 @@ static JsonValue CmdPlace (const JsonValue& req, const ProgressFn& progress)
 {
 	Geo::Ring area = ReadRing (req["area"]);
 	if (area.size () < 4)
-		return Error ("Najprv vyberte územie");
+		return Error (u8"Najprv vyberte územie");
 	Geo::BBox box = Geo::BoundsOf (area);
 	Geo::PointEN origin (req["origin"]["e"].AsNumber ((box.minE + box.maxE) * 0.5), req["origin"]["n"].AsNumber ((box.minN + box.maxN) * 0.5));
 	double h0 = req["h0"].AsNumber (0.0);
@@ -568,14 +568,14 @@ static JsonValue CmdPlace (const JsonValue& req, const ProgressFn& progress)
 
 	if (items["cadastreC"].AsBool ()) {
 		if (progress)
-			progress ("Sťahujem kataster – parcely C…");
+			progress (u8"Sťahujem kataster – parcely C…");
 		haveC = DownloadFeatures (services["cadastreC"], box, parcelsC, error);
 		if (!haveC)
 			AddResult (results, "Kataster C", false, error);
 	}
 	if (items["cadastreE"].AsBool ()) {
 		if (progress)
-			progress ("Sťahujem kataster – parcely E…");
+			progress (u8"Sťahujem kataster – parcely E…");
 		error.clear ();
 		haveE = DownloadFeatures (services["cadastreE"], box, parcelsE, error);
 		if (!haveE)
@@ -583,7 +583,7 @@ static JsonValue CmdPlace (const JsonValue& req, const ProgressFn& progress)
 	}
 	if (items["ortho"].AsBool ()) {
 		if (progress)
-			progress ("Sťahujem ortofoto…");
+			progress (u8"Sťahujem ortofoto…");
 		error.clear ();
 		haveOrtho = DownloadOrtho (services["ortho"], box, req["orthoHQ"].AsBool (false), ortho, error);
 		if (!haveOrtho)
@@ -595,16 +595,16 @@ static JsonValue CmdPlace (const JsonValue& req, const ProgressFn& progress)
 	if (items["terrain"].AsBool ()) {
 		if (!gTerrainLoaded) {
 			if (progress)
-				progress ("Sťahujem terén…");
+				progress (u8"Sťahujem terén…");
 			JsonValue loadReq = JsonValue::MakeObject ();
 			loadReq.Set ("area", req["area"]);
 			JsonValue lr = CmdLoadTerrain (loadReq, progress);
 			if (!lr["ok"].AsBool ())
-				AddResult (results, "Terén", false, lr["error"].AsString ());
+				AddResult (results, u8"Terén", false, lr["error"].AsString ());
 		}
 		if (gTerrainLoaded) {
 			if (progress)
-				progress ("Pripravujem mesh terénu…");
+				progress (u8"Pripravujem mesh terénu…");
 			TerrainMesh::Input in;
 			in.terrain = &gTerrain;
 			in.polygon = area;
@@ -613,13 +613,13 @@ static JsonValue CmdPlace (const JsonValue& req, const ProgressFn& progress)
 			in.h0 = h0;
 			haveMesh = TerrainMesh::Build (in, mesh);
 			if (!haveMesh)
-				AddResult (results, "Terén", false, mesh.error);
+				AddResult (results, u8"Terén", false, mesh.error);
 		}
 	}
 
 	// ---- Phase 2: element creation in one undo step ----
 	if (progress)
-		progress ("Vkladám prvky do Archicadu…");
+		progress (u8"Vkladám prvky do Archicadu…");
 
 	Placer::Stats stats;
 	Placer::Offset localOff;
@@ -640,8 +640,8 @@ static JsonValue CmdPlace (const JsonValue& req, const ProgressFn& progress)
 		if (!toWorksheet)
 			db.SwitchToFloorPlan ();
 		if (toWorksheet) {
-			if (db.SwitchToWorksheet (Util::ToUni (st["worksheetName"].AsString ("Mapové podklady"))) != NoError)
-				AddResult (results, "Pracovný list", false, "Pracovný list sa nepodarilo vytvoriť – vkladám do pôdorysu");
+			if (db.SwitchToWorksheet (Util::ToUni (st["worksheetName"].AsString (u8"Mapové podklady"))) != NoError)
+				AddResult (results, u8"Pracovný list", false, u8"Pracovný list sa nepodarilo vytvoriť – vkladám do pôdorysu");
 		}
 
 		auto placeParcels = [&] (const std::vector<Geo::Feature>& parcels, const std::string& lineKey, const std::string& textKey,
@@ -662,12 +662,12 @@ static JsonValue CmdPlace (const JsonValue& req, const ProgressFn& progress)
 		if (haveC) {
 			int l0 = stats.lines;
 			placeParcels (parcelsC, "cadastreC", "cadastreCText", "KN_parcely_C", "KN_cisla_C", 1);
-			AddResult (results, "Kataster C", true, std::to_string (parcelsC.size ()) + " parciel, " + std::to_string (stats.lines - l0) + " čiar");
+			AddResult (results, "Kataster C", true, std::to_string (parcelsC.size ()) + " parciel, " + std::to_string (stats.lines - l0) + u8" čiar");
 		}
 		if (haveE) {
 			int l0 = stats.lines;
 			placeParcels (parcelsE, "cadastreE", "cadastreEText", "KN_parcely_E", "KN_cisla_E", 3);
-			AddResult (results, "Kataster E", true, std::to_string (parcelsE.size ()) + " parciel, " + std::to_string (stats.lines - l0) + " čiar");
+			AddResult (results, "Kataster E", true, std::to_string (parcelsE.size ()) + " parciel, " + std::to_string (stats.lines - l0) + u8" čiar");
 		}
 		if (haveOrtho) {
 			std::string layer = layers["ortho"]["layer"].AsString ("ORTOFOTO");
@@ -675,7 +675,7 @@ static JsonValue CmdPlace (const JsonValue& req, const ProgressFn& progress)
 			for (const Placer::Offset& off : offsets)
 				if (Placer::PlacePicture (ortho.bytes, ortho.width, ortho.height, ortho.bbox, layer, "Ortofoto ZBGIS", off, stats))
 					ok++;
-			AddResult (results, "Ortofoto", ok > 0, ok > 0 ? (std::to_string (ortho.width) + " × " + std::to_string (ortho.height) + " px") : stats.lastError);
+			AddResult (results, "Ortofoto", ok > 0, ok > 0 ? (std::to_string (ortho.width) + u8" × " + std::to_string (ortho.height) + " px") : stats.lastError);
 		}
 
 		if (haveMesh) {
@@ -684,9 +684,9 @@ static JsonValue CmdPlace (const JsonValue& req, const ProgressFn& progress)
 			std::string layer = layers["terrain"]["layer"].AsString ("TEREN_DMR5");
 			bool ok = Placer::PlaceMesh (mesh.boundary, mesh.interior, layer, localOff, stats);
 			char buf[200];
-			snprintf (buf, sizeof (buf), "%u bodov (z %u), výšky %.2f až %.2f m od 0,00",
+			snprintf (buf, sizeof (buf), u8"%u bodov (z %u), výšky %.2f až %.2f m od 0,00",
 					  (unsigned) mesh.keptPoints, (unsigned) mesh.sourcePoints, mesh.minZ, mesh.maxZ);
-			AddResult (results, "Terén", ok, ok ? std::string (buf) : stats.lastError);
+			AddResult (results, u8"Terén", ok, ok ? std::string (buf) : stats.lastError);
 		}
 
 		if (items["originMarker"].AsBool (true) && (inLocal || haveMesh)) {
@@ -725,7 +725,7 @@ static std::string OriginText (const Geo::PointEN& origin, double h0)
 static JsonValue CmdExportXyz (const JsonValue& req, const ProgressFn& progress)
 {
 	if (!gTerrainLoaded)
-		return Error ("Najprv načítajte terén");
+		return Error (u8"Najprv načítajte terén");
 	Geo::Ring area = ReadRing (req["area"]);
 	Geo::BBox box = Geo::BoundsOf (area);
 	Geo::PointEN origin (req["origin"]["e"].AsNumber ((box.minE + box.maxE) * 0.5), req["origin"]["n"].AsNumber ((box.minN + box.maxN) * 0.5));
@@ -736,9 +736,9 @@ static JsonValue CmdExportXyz (const JsonValue& req, const ProgressFn& progress)
 	std::wstring path = Util::SaveFileDialog (std::wstring ((const wchar_t*) L"Uložiť terén ako XYZ"), std::wstring ((const wchar_t*) L"teren_dmr5.xyz"),
 											  std::wstring ((const wchar_t*) L"XYZ (*.xyz)|*.xyz|Text (*.txt)|*.txt"), std::wstring ((const wchar_t*) L"xyz"));
 	if (path.empty ())
-		return Error ("Zrušené");
+		return Error (u8"Zrušené");
 	if (progress)
-		progress ("Ukladám XYZ…");
+		progress (u8"Ukladám XYZ…");
 
 	std::vector<size_t> keep = Geo::ReducePoints (gTerrain, ReadReduction (req["reduction"], origin));
 	std::vector<Geo::PointENZ> pts;
@@ -759,7 +759,7 @@ static JsonValue CmdExportXyz (const JsonValue& req, const ProgressFn& progress)
 		offZ = -h0;
 	}
 	if (!Util::WriteFile (path, Geo::ToXyzText (pts, offE, offN, offZ, 3)))
-		return Error ("Súbor sa nepodarilo zapísať");
+		return Error (u8"Súbor sa nepodarilo zapísať");
 	Util::WriteFile (Util::DirName (path) + std::wstring ((const wchar_t*) L"\\bod_pociatku.txt"), OriginText (origin, h0));
 
 	JsonValue r = JsonValue::MakeObject ();
@@ -774,20 +774,20 @@ static JsonValue CmdExportOrtho (const JsonValue& req, const ProgressFn& progres
 {
 	Geo::Ring area = ReadRing (req["area"]);
 	if (area.size () < 4)
-		return Error ("Najprv vyberte územie");
+		return Error (u8"Najprv vyberte územie");
 	Geo::BBox box = Geo::BoundsOf (area);
 	std::wstring path = Util::SaveFileDialog (std::wstring ((const wchar_t*) L"Uložiť ortofoto"), std::wstring ((const wchar_t*) L"ortofoto.jpg"),
 											  std::wstring ((const wchar_t*) L"JPEG (*.jpg)|*.jpg"), std::wstring ((const wchar_t*) L"jpg"));
 	if (path.empty ())
-		return Error ("Zrušené");
+		return Error (u8"Zrušené");
 	if (progress)
-		progress ("Sťahujem ortofoto…");
+		progress (u8"Sťahujem ortofoto…");
 	OrthoImage img;
 	std::string error;
 	if (!DownloadOrtho (LoadServices ()["ortho"], box, req["orthoHQ"].AsBool (false), img, error))
 		return Error (error);
 	if (!Util::WriteFile (path, img.bytes))
-		return Error ("Súbor sa nepodarilo zapísať");
+		return Error (u8"Súbor sa nepodarilo zapísať");
 	Util::WriteFile (Util::StripExtension (path) + std::wstring ((const wchar_t*) L".jgw"), Geo::WorldFile (img.bbox, img.width, img.height, 0, 0));
 	JsonValue r = JsonValue::MakeObject ();
 	r.Set ("ok", true);
@@ -804,7 +804,7 @@ static JsonValue CmdSetPlace (const JsonValue& req)
 		return NoError;
 	});
 	if (err != NoError || !ok)
-		return Error ("Umiestnenie projektu sa nepodarilo zmeniť");
+		return Error (u8"Umiestnenie projektu sa nepodarilo zmeniť");
 	JsonValue r = JsonValue::MakeObject ();
 	r.Set ("ok", true);
 	return r;
@@ -815,7 +815,7 @@ static JsonValue CmdGetPlace ()
 {
 	double lat = 0, lon = 0, alt = 0;
 	if (!Placer::GetPlace (lat, lon, alt))
-		return Error ("Umiestnenie projektu sa nepodarilo načítať");
+		return Error (u8"Umiestnenie projektu sa nepodarilo načítať");
 	JsonValue r = JsonValue::MakeObject ();
 	r.Set ("ok", true);
 	r.Set ("lat", lat);
@@ -837,7 +837,7 @@ JsonValue Execute (const JsonValue& request, const ProgressFn& progress)
 		if (cmd == "loadTerrain")		return CmdLoadTerrain (request, progress);
 		if (cmd == "reduceCount")		return CmdReduceCount (request);
 		if (cmd == "terrainPreview")	return CmdTerrainPreview (request);
-		if (cmd == "terrainInfo")		return gTerrainLoaded ? TerrainInfo () : Error ("Terén nie je načítaný");
+		if (cmd == "terrainInfo")		return gTerrainLoaded ? TerrainInfo () : Error (u8"Terén nie je načítaný");
 		if (cmd == "place")				return CmdPlace (request, progress);
 		if (cmd == "exportXyz")			return CmdExportXyz (request, progress);
 		if (cmd == "exportOrtho")		return CmdExportOrtho (request, progress);
@@ -845,11 +845,11 @@ JsonValue Execute (const JsonValue& request, const ProgressFn& progress)
 		if (cmd == "getPlace")			return CmdGetPlace ();
 	} catch (const std::exception& e) {
 		Util::Log (std::string ("exception: ") + e.what ());
-		return Error (std::string ("Interná chyba: ") + e.what ());
+		return Error (std::string (u8"Interná chyba: ") + e.what ());
 	} catch (...) {
-		return Error ("Interná chyba");
+		return Error (u8"Interná chyba");
 	}
-	return Error ("Neznámy príkaz: " + cmd);
+	return Error (u8"Neznámy príkaz: " + cmd);
 }
 
 }	// namespace Commands
