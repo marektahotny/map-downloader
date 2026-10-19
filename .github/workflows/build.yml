@@ -93,6 +93,18 @@ jobs:
           Copy-Item README.md dist\
           Get-ChildItem dist
 
+      - name: Inspect add-on binary
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          $dumpbin = Get-ChildItem -Path "$vs\VC\Tools\MSVC" -Recurse -Filter dumpbin.exe | Where-Object { $_.FullName -match 'Hostx64\\x64' } | Select-Object -First 1
+          $apx = "addon\Build\x64\Release\PilonMapDownloader.apx"
+          $size = (Get-Item $apx).Length
+          $exp = (& $dumpbin.FullName /nologo /exports $apx | Select-String -Pattern 'FuncAddrs' | ForEach-Object { $_.Line.Trim() }) -join ' | '
+          $dep = (& $dumpbin.FullName /nologo /dependents $apx | Select-String -Pattern '\.dll' | ForEach-Object { $_.Line.Trim() }) -join ', '
+          Write-Host "::notice::apx size $size B; exports: $exp"
+          Write-Host "::notice::dependencies: $dep"
+
       - uses: actions/upload-artifact@v4
         with:
           name: PilonMapDownloader-AC23-win64
