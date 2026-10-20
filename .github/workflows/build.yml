@@ -104,12 +104,9 @@ jobs:
           $dep = (& $dumpbin.FullName /nologo /dependents $apx | Select-String -Pattern '\.dll' | ForEach-Object { $_.Line.Trim() }) -join ', '
           Write-Host "::notice::apx size $size B; exports: $exp"
           Write-Host "::notice::dependencies: $dep"
-          # MSVCP140 imports must be a subset of what Archicad 23 (3003) itself uses
-          $allow = Get-Content tools\msvcp140_allowlist.txt | Where-Object { $_ -and -not $_.StartsWith('#') }
-          $imports = & $dumpbin.FullName /nologo /imports:MSVCP140.dll $apx | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^[0-9A-F]+\s+\S' } | ForEach-Object { ($_ -split '\s+', 2)[1] }
-          $bad = $imports | Where-Object { $allow -notcontains $_ }
-          if ($bad) { foreach ($b in $bad) { Write-Host "::error::MSVCP140 import not available in Archicad 23 runtime: $b" }; exit 1 }
-          Write-Host "::notice::MSVCP140 imports OK ($($imports.Count))"
+          pip install --quiet pefile
+          python tools/check_imports.py $apx
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - uses: actions/upload-artifact@v4
         with:
