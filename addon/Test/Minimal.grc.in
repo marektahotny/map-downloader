@@ -1,0 +1,9 @@
+'STR#' 32000 "Add-on Name and Description" {
+/* [  1] */		TEST_NAME
+/* [  2] */		"Pilon diagnostic test add-on"
+}
+
+'STR#' 32500 "Strings for the Menu" {
+/* [   ] */		"Pilon Test"
+/* [  1] */		TEST_NAME
+}

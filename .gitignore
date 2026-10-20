@@ -3,3 +3,6 @@ addon/Build/
 dist/
 *.user
 .vs/
+addon/Test/Minimal.grc
+addon/Test/MinimalFix.grc
+addon/Test/Build/

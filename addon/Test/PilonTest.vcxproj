@@ -1,0 +1,121 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="15.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <!--
+    Pilon Map Downloader - doplnok pre Archicad 23 (Windows, x64)
+    Zostavenie: MSBuild + toolset v141 (Visual Studio 2017) + API Development Kit 23.
+    Cesta k DevKitu sa dá prepísať:  msbuild ... /p:DevKitDir=C:\cesta\API.Development.Kit.WIN.23.3006
+  -->
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{0D8B3C11-7E52-4C1F-8A6D-2B9E4F7A1C33}</ProjectGuid>
+    <ProjectName>PilonTest</ProjectName>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <PropertyGroup>
+    <DevKitDir Condition="'$(DevKitDir)'==''">$(MSBuildProjectDirectory)\..\..\devkit\API.Development.Kit.WIN.23.3006</DevKitDir>
+    <SupportDir>$(DevKitDir)\Support</SupportDir>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <PlatformToolset>v141</PlatformToolset>
+    <CharacterSet>NotSet</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <IntDir>Build\$(TestName)\obj\</IntDir>
+    <OutDir>Build\$(TestName)\</OutDir>
+    <TargetName>$(TestName)</TargetName>
+    <TargetExt>.apx</TargetExt>
+    <LinkIncremental>false</LinkIncremental>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <AdditionalIncludeDirectories>.;$(SupportDir)\Inc;$(SupportDir)\Extensions\MDCLParams;$(SupportDir)\Modules\GSRoot;$(SupportDir)\Modules\GSRoot\STL\imp;$(SupportDir)\Modules\GSUtils;$(SupportDir)\Modules\DGLib;$(SupportDir)\Modules\GX;$(SupportDir)\Modules\GXImage;$(SupportDir)\Modules\GXImageBase;$(SupportDir)\Modules\DGGraphix;$(SupportDir)\Modules\Graphix;$(SupportDir)\Modules\TextEngine;$(SupportDir)\Modules\InputOutput;$(SupportDir)\Modules\UCLib;$(SupportDir)\Modules\UDLib;$(SupportDir)\Modules\Pattern;$(SupportDir)\Modules\VBAttrDialogs;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <WarningLevel>Level3</WarningLevel>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <Optimization>MaxSpeed</Optimization>
+      <PreprocessorDefinitions>WIN32;NDEBUG;WINDOWS;_WINDOWS;_USRDLL;NOMINMAX;_CRT_SECURE_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <StringPooling>true</StringPooling>
+      <MinimalRebuild>false</MinimalRebuild>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <ObjectFileName>$(IntDir)</ObjectFileName>
+      <ProgramDataBaseFileName>$(OutDir)$(TargetName).pdb</ProgramDataBaseFileName>
+      <CallingConvention>FastCall</CallingConvention>
+      <CompileAs>CompileAsCpp</CompileAs>
+      <DisableSpecificWarnings>4996;4100;4127;4189;4244;4267;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <TreatWChar_tAsBuiltInType>false</TreatWChar_tAsBuiltInType>
+      <AdditionalOptions>/bigobj %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <Link>
+      <OutputFile>$(OutDir)$(TargetName).apx</OutputFile>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>$(OutDir)$(TargetName).pdb</ProgramDatabaseFile>
+      <IgnoreSpecificDefaultLibraries>MSVCRTD.lib;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <SubSystem>NotSet</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <EntryPointSymbol>DllMainEntry</EntryPointSymbol>
+      <TargetMachine>MachineX64</TargetMachine>
+      <ImportLibrary>
+      </ImportLibrary>
+      <LinkDLL>true</LinkDLL>
+      
+      <AdditionalOptions>/export:GetExportedFuncAddrs,%401 /export:SetImportedFuncAddrs,%402 %(AdditionalOptions)</AdditionalOptions>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="MinimalMain.cpp" />
+  </ItemGroup>
+  <!-- Resources (GRC -> RC2 -> RES) according to the DevKit 23 examples -->
+  <ItemGroup>
+    <CustomBuild Include="Minimal.grc">
+      <FileType>Document</FileType>
+      <Command>if not exist "$(OutDir)RO" mkdir "$(OutDir)RO"
+cl /nologo /X /EP /P /I "$(SupportDir)\Inc" /I "$(SupportDir)\Modules\DGLib" /I "." /FI"$(SupportDir)\Inc\utf8header.h" /DWINDOWS /Fi"$(OutDir)RO\Minimal.grc.rc2.i" "Minimal.grc"
+"$(SupportDir)\Tools\Win\ResConv.exe" -m r -D WINDOWS -T W -q utf8 1252 -i "$(OutDir)RO\Minimal.grc.rc2.i" -o "$(OutDir)RO\Minimal.grc.rc2" -w 2</Command>
+      <Message>Compiling the localized GRC file...</Message>
+      <Outputs>$(OutDir)RO\Minimal.grc.rc2;%(Outputs)</Outputs>
+    </CustomBuild>
+    <CustomBuild Include="MinimalFix.grc">
+      <FileType>Document</FileType>
+      <Command>if not exist "$(OutDir)RO" mkdir "$(OutDir)RO"
+cl /nologo /X /EP /P /I "$(SupportDir)\Inc" /I "$(SupportDir)\Modules\DGLib" /I "." /FI"$(SupportDir)\Inc\utf8header.h" /DWINDOWS /Fi"$(OutDir)RO\MinimalFix.grc.rc2.i" "MinimalFix.grc"
+"$(SupportDir)\Tools\Win\ResConv.exe" -m r -D WINDOWS -T W -q utf8 1252 -i "$(OutDir)RO\MinimalFix.grc.rc2.i" -o "$(OutDir)RO\MinimalFix.grc.rc2" -w 2</Command>
+      <Message>Compiling the non-localized GRC file...</Message>
+      <Outputs>$(OutDir)RO\MinimalFix.grc.rc2;%(Outputs)</Outputs>
+    </CustomBuild>
+    <CustomBuild Include="Minimal.rc2">
+      <FileType>RC</FileType>
+      <Command>rc /i "$(SupportDir)\Inc" /i "$(SupportDir)\Modules\DGLib" /i "$(OutDir)RO" /fo"$(IntDir)Minimal.res" "Minimal.rc2"</Command>
+      <Message>Compiling the RC2 file...</Message>
+      <Outputs>$(IntDir)Minimal.res;%(Outputs)</Outputs>
+      <LinkObjects>true</LinkObjects>
+      <AdditionalInputs>$(OutDir)RO\Minimal.grc.rc2;$(OutDir)RO\MinimalFix.grc.rc2;%(AdditionalInputs)</AdditionalInputs>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <Library Include="$(SupportDir)\Lib\Win\ACAP_STAT.lib" />
+    <Library Include="$(SupportDir)\Modules\DGLib\Win\DGImp.lib" />
+    <Library Include="$(SupportDir)\Modules\Geometry\Win\GeometryImp.lib" />
+    <Library Include="$(SupportDir)\Modules\GSRoot\Win\GSRootImp.lib" />
+    <Library Include="$(SupportDir)\Modules\GSUtils\Win\GSUtilsImp.lib" />
+    <Library Include="$(SupportDir)\Modules\InputOutput\Win\InputOutputImp.lib" />
+    <Library Include="$(SupportDir)\Modules\ObjectDatabase\Win\ObjectDatabaseImp.LIB" />
+    <Library Include="$(SupportDir)\Modules\VectorImage\Win\VectorImageImp.lib" />
+    <Library Include="$(SupportDir)\Modules\VBUtils\Win\VBUtilsImp.lib" />
+    <Library Include="$(SupportDir)\Modules\UCLib\Win\UCImp.lib" />
+    <Library Include="$(SupportDir)\Modules\Pattern\Win\PatternImp.lib" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
