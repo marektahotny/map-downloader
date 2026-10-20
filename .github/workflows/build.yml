@@ -116,6 +116,7 @@ jobs:
           }
           BuildMin "T1_minimal_SDK$($new.Split('.')[2])" 30001 $new
           BuildMin "T2_minimal_SDK$($old.Split('.')[2])" 30002 $old
+          BuildMin "T5_sonda" 30005 $old
           $ex = "devkit\API.Development.Kit.WIN.23.3006\Examples\Browser_Control\Browser_Control.vcxproj"
           msbuild $ex /t:Rebuild /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=$tc /p:WindowsTargetPlatformVersion=$old /p:TreatWarningAsError=false /v:minimal /nologo
           Copy-Item (Get-ChildItem -Recurse devkit\API.Development.Kit.WIN.23.3006\Examples\Browser_Control -Filter *.apx | Select-Object -First 1).FullName "dist\tests\T3_example_SDK$($old.Split('.')[2]).apx"
