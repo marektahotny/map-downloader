@@ -8,7 +8,6 @@
 #include "WebUi.hpp"		// generated from Web/index.html (tools/embed_html.py)
 
 #include <deque>
-#include <mutex>
 
 static const GS::Guid	paletteGuid ("{7C3A9E21-5B4D-4F8A-9E61-2D0B8C4F1A37}");
 static const short		dialogResId = ID_PALETTE;
@@ -17,7 +16,27 @@ static const short		menuItemIndex = 1;
 
 GS::Ref<MapPalette>		MapPalette::instance;
 
-static std::mutex				gQueueMutex;
+// Win32 critical section instead of std::mutex: std::mutex pulls in MSVCP140 symbols
+// (_Mtx_init_in_situ ...) that older VC++ runtimes shipped with Archicad 23 do not export.
+class QueueLock {
+public:
+	QueueLock ()	{ InitializeCriticalSection (&cs); }
+	~QueueLock ()	{ DeleteCriticalSection (&cs); }
+	void Lock ()	{ EnterCriticalSection (&cs); }
+	void Unlock ()	{ LeaveCriticalSection (&cs); }
+private:
+	CRITICAL_SECTION cs;
+};
+
+class QueueGuard {
+public:
+	explicit QueueGuard (QueueLock& l) : lock (l) { lock.Lock (); }
+	~QueueGuard () { lock.Unlock (); }
+private:
+	QueueLock& lock;
+};
+
+static QueueLock				gQueueMutex;
 static std::deque<std::string>	gQueue;
 
 
@@ -114,7 +133,7 @@ void MapPalette::RegisterACAPIJavaScriptObject ()
 	jsACAPI->AddItem (new DG::JSFunction ("Request", [] (GS::Ref<DG::JSBase> param) {
 		std::string json = StringFromJs (param);
 		{
-			std::lock_guard<std::mutex> lock (gQueueMutex);
+			QueueGuard guard (gQueueMutex);
 			gQueue.push_back (json);
 		}
 		static const API_ModulID mdid = { PILON_DEVELOPER_ID, PILON_LOCAL_ID };
@@ -185,7 +204,7 @@ GSErrCode __ACENV_CALL MapPalette::RequestCommandHandler (GSHandle, GSPtr, bool)
 	while (true) {
 		std::string json;
 		{
-			std::lock_guard<std::mutex> lock (gQueueMutex);
+			QueueGuard guard (gQueueMutex);
 			if (gQueue.empty ())
 				break;
 			json = gQueue.front ();
