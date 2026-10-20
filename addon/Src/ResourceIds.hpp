@@ -1,8 +1,10 @@
 #ifndef PILON_RESOURCEIDS_HPP
 #define PILON_RESOURCEIDS_HPP
 
-// Unikatne ID doplnku (MDID). Developer ID je zvolene nahodne pre sukromne pouzitie;
-// pri verejnej distribucii treba poziadat Graphisoft o vlastne Developer ID.
+// MDID doplnku. Archicad overuje platnost: obe cisla MUSI vygenerovat Graphisoft
+// (archicadapi.graphisoft.com > profil > Add-ons). S vymyslenymi hodnotami Archicad
+// doplnok odmietne ("Tento doplnek nelze otevrit").
+// TODO: nahradit Developer ID a Local ID z profilu vyvojara.
 #define PILON_DEVELOPER_ID	1347569742
 #define PILON_LOCAL_ID		10001
 
