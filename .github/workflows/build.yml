@@ -85,12 +85,21 @@ jobs:
           }
           exit $code
 
+      - name: Build Graphisoft example Browser_Control (diagnostics)
+        shell: pwsh
+        run: |
+          $ex = "devkit\API.Development.Kit.WIN.23.3006\Examples\Browser_Control\Browser_Control.vcxproj"
+          msbuild $ex /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=${{ steps.toolset.outputs.toolset }} /p:WindowsTargetPlatformVersion=${{ steps.toolset.outputs.sdk }} /p:TreatWarningAsError=false /v:minimal /nologo
+          Get-ChildItem -Recurse devkit\API.Development.Kit.WIN.23.3006\Examples\Browser_Control -Filter *.apx | ForEach-Object { Write-Host "::notice::example built $($_.FullName)" }
+
       - name: Collect output
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force dist | Out-Null
           Copy-Item addon\Build\x64\Release\PilonMapDownloader.apx dist\
           Copy-Item README.md dist\
+          $ex = Get-ChildItem -Recurse devkit\API.Development.Kit.WIN.23.3006\Examples\Browser_Control -Filter *.apx | Select-Object -First 1
+          if ($ex) { Copy-Item $ex.FullName dist\Browser_Control_example.apx }
           Get-ChildItem dist
 
       - name: Inspect add-on binary
@@ -124,7 +133,9 @@ jobs:
           body: |
             Automatické zostavenie z vetvy main (commit ${{ github.sha }}).
             Inštalácia: skopírujte PilonMapDownloader.apx do priečinka Add-Ons v Archicade 23 alebo ho pridajte cez Možnosti › Správca doplnkov.
-          files: dist/PilonMapDownloader.apx
+          files: |
+            dist/PilonMapDownloader.apx
+            dist/Browser_Control_example.apx
 
       - name: Release (version tags)
         if: startsWith(github.ref, 'refs/tags/v')
