@@ -1,4 +1,14 @@
-# Pilon Map Downloader – doplnok pre Archicad 23
+# Pilon Map Downloader
+
+> **Webový nástroj (odporúčaný pre Archicad 23):** [`web/`](web/README.md) – výber územia v mape a stiahnutie podkladov
+> ako súborov na import: kataster, budovy, ortofoto, terén (XYZ, 3D, vrstevnice) a **technická mapa Bratislavy –
+> inžinierske siete (voda, kanalizácia, plyn, teplovod, elektrina, telekomunikácie…) do DXF**.
+> Hotový balík: Releases › `web-latest` › `PilonMapDownloader-web.zip` (spustenie `start.cmd`).
+>
+> Doplnok `.apx` nižšie je naprogramovaný, ale Archicad ho načíta až s platným MDID od Graphisoftu
+> (stačí zmeniť `addon/Src/ResourceIds.hpp`).
+
+## Doplnok pre Archicad 23
 
 Paleta v Archicade 23 (Windows) na stiahnutie a vloženie mapových a 3D podkladov SR (ÚGKK SR):
 

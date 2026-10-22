@@ -22,7 +22,7 @@ namespace Commands {
 
 static const char* kDefaultServices = u8R"JSON({
  "ortho": {
-   "title": u8"Ortofotomozaika ZBGIS (ÚGKK SR)",
+   "title": "Ortofotomozaika ZBGIS (ÚGKK SR)",
    "type": "wms",
    "url": "https://zbgisws.skgeodesy.sk/zbgis_ortofoto_wms/service.svc/get",
    "layers": "1",
@@ -35,7 +35,7 @@ static const char* kDefaultServices = u8R"JSON({
    "tilePx": 2000
  },
  "cadastreC": {
-   "title": u8"Kataster – parcely registra C (INSPIRE WFS)",
+   "title": "Kataster – parcely registra C (INSPIRE WFS)",
    "type": "wfs",
    "url": "https://inspirews.skgeodesy.sk/geoserver/cp/ows",
    "typeName": "cp:CadastralParcel",
@@ -44,7 +44,7 @@ static const char* kDefaultServices = u8R"JSON({
    "count": 20000
  },
  "cadastreE": {
-   "title": u8"Kataster – parcely registra E (INSPIRE WFS)",
+   "title": "Kataster – parcely registra E (INSPIRE WFS)",
    "type": "wfs",
    "url": "https://inspirews.skgeodesy.sk/geoserver/cp_uo/ows",
    "typeName": "cp_uo:CadastralParcel",
@@ -53,7 +53,7 @@ static const char* kDefaultServices = u8R"JSON({
    "count": 20000
  },
  "terrain": {
-   "title": u8"Terén DMR 5.0 (ÚGKK SR)",
+   "title": "Terén DMR 5.0 (ÚGKK SR)",
    "type": "wcs",
    "url": "https://inspirews.skgeodesy.sk/geoserver/el/ows",
    "coverageId": "el__DMR5",

@@ -1,0 +1,62 @@
+name: Web tool (DXF export)
+
+on:
+  push:
+    branches: [ main ]
+    paths: [ 'web/**', '.github/workflows/web.yml' ]
+  pull_request:
+    paths: [ 'web/**' ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test-and-package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Unit tests (geometry, GML, terrain, DXF)
+        run: node web/tests/geo.test.js
+
+      - name: PHP syntax
+        run: php -l web/proxy.php
+
+      - name: Browser test against mocked services
+        run: |
+          pip install --quiet playwright pillow numpy pyproj ezdxf
+          python -m playwright install --with-deps chromium
+          python web/tests/ui_mock_test.py
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cd web
+          zip -r -X ../dist/PilonMapDownloader-web.zip . -x 'tests/*'
+          cd ..
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PilonMapDownloader-web
+          path: dist/PilonMapDownloader-web.zip
+
+      - name: Publish to Releases (main)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: web-latest
+          name: "Pilon Map Downloader – webový nástroj (DXF, XYZ, ortofoto)"
+          prerelease: true
+          make_latest: false
+          body: |
+            Samostatný nástroj na stiahnutie podkladov pre Archicad 23: kataster, budovy, ortofoto, terén (XYZ, 3D, vrstevnice)
+            a technická mapa Bratislavy (inžinierske siete, polohopis) do DXF.
+            Spustenie: rozbaľte ZIP a spustite start.cmd, alebo nahrajte obsah na webhosting s PHP (proxy.php).
+            Commit ${{ github.sha }}.
+          files: dist/PilonMapDownloader-web.zip

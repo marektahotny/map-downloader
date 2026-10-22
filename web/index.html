@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pilon Map Downloader</title>
+<link rel="stylesheet" href="vendor/leaflet.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<div id="app">
+	<div id="mapWrap">
+		<div id="map"></div>
+		<div id="mapHint"></div>
+		<div id="mapTools">
+			<button class="tbtn" id="toolRect" title="Výber územia obdĺžnikom (osi S-JTSK)">▭ Obdĺžnik</button>
+			<button class="tbtn" id="toolPoly" title="Výber územia polygónom – ukončíte dvojklikom alebo kliknutím na prvý bod">⬡ Polygón</button>
+			<button class="tbtn" id="toolPlot" title="Kliknutím vyberte / odoberte parcely C, ktoré tvoria pozemok">▣ Pozemok</button>
+			<button class="tbtn" id="toolOrigin" title="Umiestniť bod lokálneho počiatku">✛ Počiatok</button>
+		</div>
+		<div id="coords"></div>
+	</div>
+
+	<aside id="panel">
+		<header>
+			<div class="brand">Pilon <span>Map Downloader</span></div>
+			<div class="ver">podklady pre Archicad 23</div>
+			<div class="spacer"></div>
+			<button class="iconbtn" id="btnSettings" title="Hladiny, farby a služby">⚙</button>
+		</header>
+
+		<div id="search">
+			<input type="text" id="q" placeholder="Adresa, obec… alebo súradnice (48.14, 17.11 / Y X)" autocomplete="off">
+			<button class="btn" id="btnFind">Nájsť</button>
+			<div id="searchResults"></div>
+		</div>
+
+		<div id="scroll">
+			<section>
+				<h2>Územie <span class="badge" id="areaBadge">nevybrané</span></h2>
+				<div class="small muted" id="areaInfo">Nástrojom ▭ Obdĺžnik alebo ⬡ Polygón nakreslite do mapy územie, pre ktoré sa podklady stiahnu.</div>
+				<div class="row"><button class="link" id="btnClearArea">zrušiť územie</button></div>
+			</section>
+
+			<section>
+				<h2>Stavebný pozemok <span class="badge" id="plotBadge">nevybraný</span></h2>
+				<div class="small muted">▣ Pozemok: kliknutím na parcely v mape ich pridáte alebo odoberiete. Hranica pozemku sa nakreslí bez vnútorných hraníc parciel.</div>
+				<div id="plotList" class="small"></div>
+				<div class="row">
+					<button class="btn" id="btnPlotPick">▣ Vybrať parcely</button>
+					<label class="small"><input type="checkbox" id="itPlotReport" checked> report (TXT + XML)</label>
+					<button class="link" id="btnPlotClear">zrušiť pozemok</button>
+				</div>
+			</section>
+
+			<section>
+				<h2>Kataster a ZBGIS <span class="muted small">© ÚGKK SR</span></h2>
+				<label class="item"><input type="checkbox" id="itCadC" checked> <b>Katastrálna mapa – parcely C</b><span class="desc">hranice a čísla parciel</span></label>
+				<label class="item"><input type="checkbox" id="itCadE"> <b>Parcely registra E</b><span class="desc">pôvodné vlastnícke parcely, samostatná hladina</span></label>
+				<label class="item"><input type="checkbox" id="itPlot" checked> <b>Hranica pozemku</b><span class="desc">hladina KN_POZEMOK</span></label>
+				<label class="item"><input type="checkbox" id="itBuildings"> <b>Budovy ZBGIS</b><span class="desc">obrysy budov (celé Slovensko)</span></label>
+				<label class="item"><input type="checkbox" id="itOrtho"> <b>Ortofoto</b><span class="desc">JPG + JGW, cca 0,25 m/px</span></label>
+				<label class="item sub"><input type="checkbox" id="orthoHQ"> vysoká kvalita (až 16 000 px – veľký súbor)</label>
+			</section>
+
+			<section id="baSection">
+				<h2>Technická mapa Bratislava <span class="muted small">© Hlavné mesto SR Bratislava</span></h2>
+				<div class="note" id="baNote">Verejné GIS údaje mesta – aktualizované približne raz ročne, <b>len informatívne</b>. Záväzné sú vyjadrenia správcov sietí.</div>
+				<div class="small muted" id="baOutside" style="display:none">Vybrané územie leží mimo Bratislavy – údaje technickej mapy tu nie sú.</div>
+				<div class="sublabel">Inžinierske siete</div>
+				<div id="baSiete" class="themes"></div>
+				<div class="sublabel">Polohopis a výškopis</div>
+				<div id="baTm" class="themes"></div>
+				<div class="row small">
+					<label><input type="checkbox" id="baSplit" checked> hladiny podľa typu vedenia</label>
+					<label><input type="checkbox" id="baConn" checked> prípojky zvlášť</label>
+					<label><input type="checkbox" id="baShow" checked> zobraziť v mape</label>
+				</div>
+			</section>
+
+			<section>
+				<h2>Terén <span class="badge" id="terrainBadge">nenačítaný</span></h2>
+				<div class="row">
+					<label><input type="radio" name="terSrc" value="ba" checked> Bratislava – výškový model mesta</label>
+					<select id="terRes" title="Rozostup bodov"><option value="1">1 m</option><option value="2">2 m</option><option value="5">5 m</option></select>
+				</div>
+				<div class="row">
+					<label><input type="radio" name="terSrc" value="file"> Súbor (DMR 5.0 GeoTIFF, ASC, XYZ)</label>
+					<input type="file" id="terFile" multiple accept=".tif,.tiff,.asc,.xyz,.txt,.csv">
+				</div>
+				<div class="row">
+					<button class="btn" id="btnLoadTerrain">Načítať terén</button>
+					<label class="small"><input type="checkbox" id="itTerrain"> pridať do balíka</label>
+				</div>
+				<div id="terrainBox" style="display:none">
+					<div class="small muted" id="terrainInfo"></div>
+					<div class="row"><label><input type="checkbox" id="redOn" checked> optimalizovať počet bodov</label></div>
+					<div id="redBox">
+						<div class="row">
+							<label><input type="radio" name="redMode" value="0" checked> rovnomerne</label>
+							<label><input type="radio" name="redMode" value="1"> hustejšie pri počiatku</label>
+						</div>
+						<div id="redUniform" class="slider"><span class="lbl">zachovať</span><input type="range" id="redKeep" min="1" max="100" value="25"><span class="val num" id="redKeepVal">25 %</span></div>
+						<div id="redDistance" style="display:none">
+							<div class="slider"><span class="lbl">pri počiatku</span><input type="range" id="redNear" min="1" max="100" value="100"><span class="val num" id="redNearVal">100 %</span></div>
+							<div class="slider"><span class="lbl">ďaleko</span><input type="range" id="redFar" min="1" max="100" value="6"><span class="val num" id="redFarVal">6 %</span></div>
+						</div>
+						<div class="row small"><span class="muted">zostane bodov:</span> <b class="num" id="redCount">–</b></div>
+					</div>
+					<div class="row small">
+						<label><input type="checkbox" id="terContours" checked> vrstevnice</label>
+						<select id="terInterval"><option value="0.25">0,25 m</option><option value="0.5">0,5 m</option><option value="1" selected>1 m</option><option value="2">2 m</option><option value="5">5 m</option></select>
+						<span class="muted">hlavné každá</span>
+						<select id="terMajor"><option value="4">4.</option><option value="5" selected>5.</option><option value="10">10.</option></select>
+					</div>
+					<div class="row small">
+						<label><input type="checkbox" id="terFaces" checked> 3D sieť (3DFACE DXF)</label>
+						<label><input type="checkbox" id="xyzPositive"> XYZ v S-JTSK ako kladné Y X</label>
+					</div>
+					<div class="row"><button class="btn" id="btnPreview3d">Náhľad 3D</button></div>
+					<canvas id="preview3d"></canvas>
+				</div>
+			</section>
+
+			<section>
+				<h2>Počiatok a výška</h2>
+				<div class="small" id="originInfo">Počiatok: <span class="muted">stred územia</span></div>
+				<div class="row">
+					<button class="btn" id="btnOriginPick">✛ Umiestniť</button>
+					<button class="link" id="btnOriginClear">použiť stred územia</button>
+				</div>
+				<div class="row">
+					<label>±0,000 = <input type="number" id="h0" step="0.01" value="0"> m n. m.</label>
+					<button class="btn" id="btnH0" title="Nadmorská výška terénu v bode počiatku">z terénu</button>
+				</div>
+			</section>
+
+			<section>
+				<h2>Výstup</h2>
+				<div class="row">
+					<span>Súradnice:</span>
+					<label><input type="radio" name="coords" value="local" checked> lokálne</label>
+					<label><input type="radio" name="coords" value="jtsk"> S-JTSK</label>
+					<label><input type="radio" name="coords" value="both"> obe</label>
+				</div>
+				<div class="row">
+					<label>Výška textu <input type="number" id="textH" step="0.1" min="0.1" value="0.5"> m</label>
+					<label>Symbol <input type="number" id="symSize" step="0.1" min="0.1" value="0.5"> m</label>
+				</div>
+				<div class="row small">
+					<label><input type="checkbox" id="optClip" checked> orezať na územie</label>
+					<label><input type="checkbox" id="optSeparate"> DXF po témach</label>
+					<label><input type="checkbox" id="optArea"> hranica územia</label>
+					<label><input type="checkbox" id="optOrigin" checked> značka počiatku</label>
+				</div>
+			</section>
+
+			<section>
+				<h2>Výsledok</h2>
+				<ul id="log"><li class="muted">Zatiaľ nič.</li></ul>
+			</section>
+
+			<div class="foot small muted">
+				Údaje: © ÚGKK SR (CC BY 4.0) · © Hlavné mesto SR Bratislava · © OpenStreetMap. Informatívne, bez záruky.
+			</div>
+		</div>
+
+		<div id="actions">
+			<div id="busy"></div>
+			<div class="row">
+				<button class="btn primary grow" id="btnExport">Stiahnuť podklady (ZIP)</button>
+			</div>
+			<div id="status">Pripravené.</div>
+		</div>
+	</aside>
+</div>
+
+<div class="modal" id="settingsModal">
+	<div class="box">
+		<h3>Nastavenia</h3>
+		<div class="tabs">
+			<button class="btn active" data-tab="tabLayers">Hladiny DXF</button>
+			<button class="btn" data-tab="tabServices">Služby</button>
+		</div>
+		<div id="tabLayers">
+			<table>
+				<thead><tr><th>Prvok</th><th>Hladina</th><th title="Farba AutoCAD (ACI 1–255)">Farba</th></tr></thead>
+				<tbody id="layerRows"></tbody>
+			</table>
+			<div class="small muted">Hladiny sietí Bratislavy sa tvoria automaticky: BA_&lt;SIEŤ&gt;_&lt;typ&gt; (napr. BA_PLYN_potrubie_strednotlak), body BA_…_P_…, popisy BA_…_T_…; farby podľa mapy mesta.</div>
+		</div>
+		<div id="tabServices" style="display:none">
+			<div class="row"><label class="grow">Proxy <input type="text" id="setProxy" style="width:100%"></label></div>
+			<div class="row"><label class="grow">Kľúč proxy (ak je nastavený v proxy.php) <input type="text" id="setProxyKey" style="width:100%"></label></div>
+			<div class="small muted">Mapové servery nepovoľujú priame sťahovanie z prehliadača, preto údaje idú cez proxy.php na vašom webhostingu alebo cez lokálny server (start.cmd).</div>
+			<div class="row"><button class="btn" id="btnTest">Test služieb</button></div>
+			<div id="testResults"></div>
+		</div>
+		<div class="row" style="justify-content:flex-end;margin-top:10px">
+			<button class="link" id="btnResetSettings">obnoviť predvolené</button>
+			<span class="grow"></span>
+			<button class="btn" id="btnCancelSettings">Zrušiť</button>
+			<button class="btn primary" id="btnSaveSettings">Uložiť</button>
+		</div>
+	</div>
+</div>
+
+<script src="vendor/leaflet.js"></script>
+<script src="vendor/proj4.js"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/geotiff.js"></script>
+<script src="vendor/delaunator.min.js"></script>
+<script src="js/geo.js"></script>
+<script src="js/dxf.js"></script>
+<script src="js/sources.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
